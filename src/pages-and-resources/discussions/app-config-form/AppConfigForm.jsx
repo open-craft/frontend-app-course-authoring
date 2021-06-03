@@ -10,6 +10,7 @@ import { Container } from '@edx/paragon';
 import { useModel, useModels } from '../../../generic/model-store';
 import { PagesAndResourcesContext } from '../../PagesAndResourcesProvider';
 import {
+  DENIED,
   FAILED, LOADED, LOADING, selectApp,
 } from '../data/slice';
 import { saveAppConfig } from '../data/thunks';
@@ -21,6 +22,7 @@ import LegacyConfigForm from './apps/legacy';
 import LtiConfigForm from './apps/lti';
 import Loading from '../../../generic/Loading';
 import SaveFormConnectionErrorAlert from '../../../generic/SaveFormConnectionErrorAlert';
+import PermissionDeniedAlert from '../../../generic/PermissionDeniedAlert';
 
 function AppConfigForm({
   courseId, intl,
@@ -30,7 +32,7 @@ function AppConfigForm({
   const { path: pagesAndResourcesPath } = useContext(PagesAndResourcesContext);
   const { params: { appId: routeAppId } } = useRouteMatch();
   const {
-    selectedAppId, status, saveStatus, discussionTopicIds, divideDiscussionIds,
+    discussionTopicIds, divideDiscussionIds, selectedAppId, status, saveStatus,
   } = useSelector(state => state.discussions);
   const app = useModel('apps', selectedAppId);
   // appConfigs have no ID of their own, so we use the active app ID to reference them.
@@ -65,6 +67,9 @@ function AppConfigForm({
     alert = (
       <SaveFormConnectionErrorAlert />
     );
+  }
+  if (saveStatus === DENIED) {
+    alert = <PermissionDeniedAlert />;
   }
 
   let form = null;
