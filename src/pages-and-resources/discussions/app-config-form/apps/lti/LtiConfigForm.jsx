@@ -50,6 +50,9 @@ function LtiConfigForm({
       <Form ref={formRef} onSubmit={handleSubmit}>
         <h3 className="mb-3">{title}</h3>
         <p>{intl.formatMessage(messages.formInstructions)}</p>
+        {app.additionalMessages && app.additionalMessages.map(msg => (
+          <p key={msg}>{msg}</p>
+        ))}
         <Form.Group controlId="consumerKey" isInvalid={isInvalidConsumerKey} className="mb-4">
           <Form.Control
             floatingLabel={intl.formatMessage(messages.consumerKey)}
