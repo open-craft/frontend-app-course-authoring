@@ -15,6 +15,7 @@ import ResourceList from './resources/ResourcesList';
 import { fetchCourseApps } from './data/thunks';
 import { useModels } from '../generic/model-store';
 import PagesAndResourcesProvider from './PagesAndResourcesProvider';
+import supportedPages from './data/supportedPages';
 
 function PagesAndResources({ courseId, intl }) {
   const { path, url } = useRouteMatch();
@@ -26,7 +27,7 @@ function PagesAndResources({ courseId, intl }) {
 
   const courseAppIds = useSelector(state => state.pagesAndResources.courseAppIds);
   // Each page here is driven by a course app
-  const pages = useModels('courseApps', courseAppIds);
+  const pages = useModels('courseApps', courseAppIds).map(app => ({ ...app, hasFrontendSupport: supportedPages.has(app.id) }));
 
   return (
     <PagesAndResourcesProvider courseId={courseId}>

@@ -1,9 +1,9 @@
 import { history } from '@edx/frontend-platform';
 import { injectIntl, intlShape } from '@edx/frontend-platform/i18n';
 import {
-  Button, Card, Icon, IconButton,
+  Button, Card, Icon, IconButton, Hyperlink,
 } from '@edx/paragon';
-import { Settings } from '@edx/paragon/icons';
+import { Launch, Settings } from '@edx/paragon/icons';
 import PropTypes from 'prop-types';
 import React, { useContext } from 'react';
 import StatusBadge from '../../generic/status-badge/StatusBadge';
@@ -19,6 +19,7 @@ const CoursePageShape = PropTypes.shape({
     enable: PropTypes.bool.isRequired,
     configure: PropTypes.bool.isRequired,
   }).isRequired,
+  hasFrontendSupport: PropTypes.bool.isRequired,
 });
 
 export { CoursePageShape };
@@ -33,6 +34,34 @@ function PageCard({
     history.push(`${pagesAndResourcesPath}/${page.id}`);
   };
 
+  const settingsButton = () => {
+    if (page.hasFrontendSupport) {
+      return (
+        <IconButton
+          className="mb-0 mr-1"
+          src={Settings}
+          iconAs={Icon}
+          size="inline"
+          alt={intl.formatMessage(messages.settings)}
+          onClick={() => history.push(`${pagesAndResourcesPath}/${page.id}/settings`)}
+        />
+      );
+    }
+    if (page.legacyLink) {
+      return (
+        <Hyperlink destination={page.legacyLink}>
+          <Icon
+            className="mb-0 mr-1"
+            src={Launch}
+            size="inline"
+            screenReaderText={intl.formatMessage(messages.settings)}
+          />
+        </Hyperlink>
+      );
+    }
+    return null;
+  };
+
   return (
     <Card
       className="shadow card"
@@ -45,16 +74,7 @@ function PageCard({
         <Card.Title className="d-flex mb-0 align-items-center justify-content-between">
           <h4 className="m-0 p-0">{page.name}</h4>
           {(page.allowedOperations.configure || page.allowedOperations.enable)
-          && (
-            <IconButton
-              className="mb-0 mr-1"
-              src={Settings}
-              iconAs={Icon}
-              size="inline"
-              alt={intl.formatMessage(messages.settings)}
-              onClick={() => history.push(`${pagesAndResourcesPath}/${page.id}/settings`)}
-            />
-          )}
+          && settingsButton()}
         </Card.Title>
 
         <div className="mb-2"><StatusBadge status={page.enabled} /></div>
