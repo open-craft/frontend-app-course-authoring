@@ -19,7 +19,6 @@ const CoursePageShape = PropTypes.shape({
     enable: PropTypes.bool.isRequired,
     configure: PropTypes.bool.isRequired,
   }).isRequired,
-  hasFrontendSupport: PropTypes.bool.isRequired,
 });
 
 export { CoursePageShape };
@@ -35,18 +34,6 @@ function PageCard({
   };
 
   const settingsButton = () => {
-    if (page.hasFrontendSupport) {
-      return (
-        <IconButton
-          className="mb-0 mr-1"
-          src={Settings}
-          iconAs={Icon}
-          size="inline"
-          alt={intl.formatMessage(messages.settings)}
-          onClick={() => history.push(`${pagesAndResourcesPath}/${page.id}/settings`)}
-        />
-      );
-    }
     if (page.legacyLink) {
       return (
         <Hyperlink destination={page.legacyLink}>
@@ -59,7 +46,16 @@ function PageCard({
         </Hyperlink>
       );
     }
-    return null;
+    return (
+      <IconButton
+        className="mb-0 mr-1"
+        src={Settings}
+        iconAs={Icon}
+        size="inline"
+        alt={intl.formatMessage(messages.settings)}
+        onClick={() => history.push(`${pagesAndResourcesPath}/${page.id}/settings`)}
+      />
+    );
   };
 
   return (
