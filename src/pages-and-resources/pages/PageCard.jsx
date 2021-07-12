@@ -3,7 +3,7 @@ import { injectIntl, intlShape } from '@edx/frontend-platform/i18n';
 import {
   Button, Card, Icon, IconButton, Hyperlink,
 } from '@edx/paragon';
-import { Launch, Settings } from '@edx/paragon/icons';
+import { ForwardArrow, Settings } from '@edx/paragon/icons';
 import PropTypes from 'prop-types';
 import React, { useContext } from 'react';
 import StatusBadge from '../../generic/status-badge/StatusBadge';
@@ -39,7 +39,7 @@ function PageCard({
         <Hyperlink destination={page.legacyLink}>
           <Icon
             className="mb-0 mr-1"
-            src={Launch}
+            src={ForwardArrow}
             size="inline"
             screenReaderText={intl.formatMessage(messages.settings)}
           />
