@@ -1,11 +1,11 @@
 import React, {
-  useCallback, useContext, useEffect,
+  useCallback, useContext, useEffect, useState,
 } from 'react';
 import PropTypes from 'prop-types';
 import { useDispatch, useSelector } from 'react-redux';
 import { useRouteMatch } from 'react-router';
 import { injectIntl, intlShape } from '@edx/frontend-platform/i18n';
-import { Container } from '@edx/paragon';
+import { ActionRow, Button, Container, ModalDialog } from '@edx/paragon';
 
 import { useModel, useModels } from '../../../generic/model-store';
 import { PagesAndResourcesContext } from '../../PagesAndResourcesProvider';
@@ -32,7 +32,7 @@ function AppConfigForm({
   const { path: pagesAndResourcesPath } = useContext(PagesAndResourcesContext);
   const { params: { appId: routeAppId } } = useRouteMatch();
   const {
-    discussionTopicIds, divideDiscussionIds, selectedAppId, status, saveStatus,
+    activeAppId, discussionTopicIds, divideDiscussionIds, selectedAppId, status, saveStatus,
   } = useSelector(state => state.discussions);
   const app = useModel('apps', selectedAppId);
   // appConfigs have no ID of their own, so we use the active app ID to reference them.
@@ -41,6 +41,8 @@ function AppConfigForm({
   const appConfigObj = useModel('appConfigs', selectedAppId);
   const discussionTopics = useModels('discussionTopics', discussionTopicIds);
   const appConfig = { ...appConfigObj, discussionTopics, divideDiscussionIds };
+
+  const [confirmationDialogVisible, setConfirmationDialogVisible] = useState(false);
 
   useEffect(() => {
     if (status === LOADED) {
@@ -52,9 +54,18 @@ function AppConfigForm({
 
   // This is a callback that gets called after the form has been submitted successfully.
   const handleSubmit = useCallback((values) => {
-    // Note that when this action succeeds, we redirect to pagesAndResurcesPath in the thunk.
-    dispatch(saveAppConfig(courseId, selectedAppId, values, pagesAndResourcesPath));
-  }, [courseId, selectedAppId, courseId]);
+    // FIXME: this should check whether form values have changed as well!
+    const needsConfirmation = (activeAppId !== selectedAppId);
+    if (needsConfirmation && !confirmationDialogVisible) {
+      console.debug('Confirmation required to change discussion settings, showing dialog...')
+      setConfirmationDialogVisible(true);
+    } else {
+      console.info('Saving discussion settings...')
+      setConfirmationDialogVisible(false);
+      // Note that when this action succeeds, we redirect to pagesAndResurcesPath in the thunk.
+      dispatch(saveAppConfig(courseId, selectedAppId, values, pagesAndResourcesPath));
+    }
+  }, [activeAppId, confirmationDialogVisible, courseId, selectedAppId]);
 
   if (!selectedAppId || status === LOADING) {
     return (
@@ -97,6 +108,27 @@ function AppConfigForm({
     <Container size="sm" className="px-sm-0 py-sm-5 p-0" data-testid="appConfigForm">
       {alert}
       {form}
+      <ModalDialog
+        hasCloseButton={false}
+        isOpen={confirmationDialogVisible}
+        onClose={() => setConfirmationDialogVisible(false)}
+      >
+        <ModalDialog.Header>
+          <ModalDialog.Title>
+            {intl.formatMessage(messages.confirmConfigurationChange)}
+          </ModalDialog.Title>
+        </ModalDialog.Header>
+        <ModalDialog.Body>
+          {intl.formatMessage(messages.configurationChangeConsequence)}
+        </ModalDialog.Body>
+
+        <ModalDialog.Footer>
+          <ActionRow>
+            <Button onClick={() => setConfirmationDialogVisible(false)}>{intl.formatMessage(messages.backButton)}</Button>
+            <AppConfigFormSaveButton />
+          </ActionRow>
+        </ModalDialog.Footer>
+      </ModalDialog>
     </Container>
   );
 }
