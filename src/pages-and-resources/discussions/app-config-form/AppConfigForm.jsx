@@ -5,7 +5,12 @@ import PropTypes from 'prop-types';
 import { useDispatch, useSelector } from 'react-redux';
 import { useRouteMatch } from 'react-router';
 import { injectIntl, intlShape } from '@edx/frontend-platform/i18n';
-import { ActionRow, Button, Container, ModalDialog } from '@edx/paragon';
+import {
+  ActionRow,
+  Button,
+  Container,
+  ModalDialog,
+} from '@edx/paragon';
 
 import { useModel, useModels } from '../../../generic/model-store';
 import { PagesAndResourcesContext } from '../../PagesAndResourcesProvider';
@@ -57,10 +62,8 @@ function AppConfigForm({
     // FIXME: this should check whether form values have changed as well!
     const needsConfirmation = (activeAppId !== selectedAppId);
     if (needsConfirmation && !confirmationDialogVisible) {
-      console.debug('Confirmation required to change discussion settings, showing dialog...')
       setConfirmationDialogVisible(true);
     } else {
-      console.info('Saving discussion settings...')
       setConfirmationDialogVisible(false);
       // Note that when this action succeeds, we redirect to pagesAndResurcesPath in the thunk.
       dispatch(saveAppConfig(courseId, selectedAppId, values, pagesAndResourcesPath));
@@ -121,10 +124,13 @@ function AppConfigForm({
         <ModalDialog.Body>
           {intl.formatMessage(messages.configurationChangeConsequence)}
         </ModalDialog.Body>
-
         <ModalDialog.Footer>
           <ActionRow>
-            <Button onClick={() => setConfirmationDialogVisible(false)}>{intl.formatMessage(messages.backButton)}</Button>
+            <Button
+              onClick={() => setConfirmationDialogVisible(false)}
+            >
+              {intl.formatMessage(messages.backButton)}
+            </Button>
             <AppConfigFormSaveButton />
           </ActionRow>
         </ModalDialog.Footer>
