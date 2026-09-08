@@ -10,10 +10,10 @@ import {
 import { Check } from '@openedx/paragon/icons';
 import FormDropdown from './FormDropdown';
 import { getLanguageOptions } from '../data/utils';
-import type { TranscriptCredentials, TranscriptPreferences, TranscriptionPlan } from '../data/api';
+import type { TranscriptCredentials, TranscriptPreferencesForm, TranscriptionPlan } from '../data/api';
 import messages from './messages';
 
-type TranscriptData = TranscriptPreferences & TranscriptCredentials;
+type TranscriptData = TranscriptPreferencesForm & TranscriptCredentials;
 type ThreePlayMediaFormProps = {
   hasTranscriptCredentials: boolean;
   data: TranscriptData;

@@ -4,10 +4,10 @@ import { FormattedMessage, useIntl } from '@edx/frontend-platform/i18n';
 import { Form, Stack, TransitionReplace } from '@openedx/paragon';
 import FormDropdown from './FormDropdown';
 import { getFidelityOptions } from '../data/utils';
-import type { TranscriptCredentials, TranscriptPreferences, TranscriptionPlan } from '../data/api';
+import type { TranscriptCredentials, TranscriptPreferencesForm, TranscriptionPlan } from '../data/api';
 import messages from './messages';
 
-type TranscriptData = TranscriptPreferences & TranscriptCredentials;
+type TranscriptData = TranscriptPreferencesForm & TranscriptCredentials;
 type Cielo24FormProps = {
   hasTranscriptCredentials: boolean;
   data: TranscriptData;

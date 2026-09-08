@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
-import type { TranscriptCredentials, TranscriptPreferences, TranscriptionPlans } from '../data/api';
+import type {
+  TranscriptCredentials,
+  TranscriptPreferencesForm,
+  TranscriptPreferencesState,
+  TranscriptionPlans,
+} from '../data/api';
 import type { VideosState } from '../data/slice';
 import { isEmpty } from 'lodash';
 import { useDispatch, useSelector } from 'react-redux';
@@ -23,9 +28,9 @@ import {
   updateTranscriptPreference,
 } from '../data/thunks';
 
-type TranscriptFormData = TranscriptPreferences & TranscriptCredentials;
+type TranscriptFormData = TranscriptPreferencesForm & TranscriptCredentials;
 type TranscriptSettingsPageSettings = {
-  activeTranscriptPreferences?: TranscriptPreferences | null;
+  activeTranscriptPreferences?: TranscriptPreferencesState | null;
   transcriptCredentials: Record<string, boolean>;
   videoTranscriptSettings: { transcriptionPlans: TranscriptionPlans; };
   isAiTranslationsEnabled: boolean;

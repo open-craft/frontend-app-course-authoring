@@ -31,7 +31,7 @@ import {
   type UploadData,
   type UploadingIdsRef,
   type Video,
-  type TranscriptPreferences,
+  type TranscriptPreferencesForm,
 } from './api';
 import {
   setVideoIds,
@@ -112,7 +112,7 @@ export function fetchVideos(courseId: string): VideosThunk {
       // Previous uploads are the current videos associated with a course.
       // If previous uploads are empty there is no need to add an empty model
       // or loop through and empty list so automatically set loading to successful
-      if (isEmpty(previousUploads)) {
+      if (!previousUploads?.length) {
         dispatch(
           updateLoadingStatus({ courseId, status: RequestStatus.SUCCESSFUL }),
         );
@@ -327,7 +327,7 @@ export const newUploadData = ({
   key,
   originalValue,
 }: {
-  status: string;
+  status: import('../../../data/constants').RequestStatusType;
   edxVideoId?: string;
   currentData: Record<string, UploadData>;
   key: string;
@@ -362,7 +362,7 @@ export function addVideoFile(
       uploadingIdsRef.current.uploadData = newUploadData({
         status: RequestStatus.PENDING,
         currentData: uploadingIdsRef.current.uploadData,
-        originalValue: { name, progress },
+        originalValue: { name, progress, status: RequestStatus.PENDING },
         key: `video_${idx}`,
       });
 
@@ -372,7 +372,7 @@ export function addVideoFile(
         uploadingIdsRef.current.uploadData = newUploadData({
           status: RequestStatus.IN_PROGRESS,
           currentData: uploadingIdsRef.current.uploadData,
-          originalValue: { name, progress },
+          originalValue: { name, progress, status: RequestStatus.IN_PROGRESS },
           key: `video_${idx}`,
           edxVideoId,
         });
@@ -840,7 +840,7 @@ export function updateTranscriptCredentials(
 }
 
 export function updateTranscriptPreference(
-  { courseId, data }: { courseId: string; data: TranscriptPreferences; },
+  { courseId, data }: { courseId: string; data: TranscriptPreferencesForm; },
 ): VideosThunk {
   return async (dispatch) => {
     dispatch(

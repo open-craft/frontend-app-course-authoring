@@ -23,7 +23,7 @@ interface VideoThumbnailProps {
   id: string;
   imageSize: CSSProperties;
   handleAddThumbnail: (file: File, videoId: string) => void;
-  videoImageSettings: VideoImageSettings;
+  videoImageSettings?: VideoImageSettings;
   status: string;
   pageLoadStatus: string;
 }

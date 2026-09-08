@@ -8,13 +8,18 @@ import ThreePlayMediaForm from './ThreePlayMediaForm';
 import { RequestStatus } from '../../../data/constants';
 import messages from './messages';
 import { checkCredentials, checkTranscriptionPlans, validateForm } from '../data/utils';
-import type { TranscriptCredentials, TranscriptPreferences, TranscriptionPlans } from '../data/api';
+import type {
+  TranscriptCredentials,
+  TranscriptPreferencesForm,
+  TranscriptPreferencesState,
+  TranscriptionPlans,
+} from '../data/api';
 
-type TranscriptData = TranscriptPreferences & TranscriptCredentials;
+type TranscriptData = TranscriptPreferencesForm & TranscriptCredentials;
 
 type OrderTranscriptFormProps = {
   setTranscriptType: (type: string | null) => void;
-  activeTranscriptPreferences?: TranscriptData | null;
+  activeTranscriptPreferences?: (TranscriptPreferencesState & TranscriptCredentials) | null;
   transcriptType: string;
   transcriptCredentials: Record<string, boolean>;
   closeTranscriptSettings: () => void;

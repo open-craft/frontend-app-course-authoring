@@ -1,5 +1,7 @@
 import 'file-saver';
 import MockAdapter from 'axios-mock-adapter';
+import { RequestStatus } from '../../../data/constants';
+import type { DownloadRow, UploadingIdsRef } from './api';
 import { initializeMockApp } from '@edx/frontend-platform';
 import { getAuthenticatedHttpClient, getHttpClient } from '@edx/frontend-platform/auth';
 
@@ -58,7 +60,7 @@ describe('api.js', () => {
       it('should return error if row does not contain .original attribute', async () => {
         const expected = ['Cannot find download file for video.'];
         const actual = await getDownload([
-          { asset: { displayName: 'test1', id: '1' } },
+          { asset: { displayName: 'test1', id: '1' } } as unknown as DownloadRow,
           { original: { displayName: 'test2', id: '2', downloadLink: 'test1.com' } },
         ], 'SoMEiD');
         expect(actual).toEqual(expected);
@@ -75,7 +77,7 @@ describe('api.js', () => {
       it('should return error if row does not contain .original ancestor', async () => {
         const expected = ['Failed to download video.'];
         const actual = await getDownload([
-          { asset: { displayName: 'test1', id: '1', download_link: 'test1.com' } },
+          { asset: { displayName: 'test1', id: '1', download_link: 'test1.com' } } as unknown as DownloadRow,
         ], 'SoMEiD');
         expect(actual).toEqual(expected);
       });
@@ -97,17 +99,21 @@ describe('api.js', () => {
       expect(actual).toEqual(expected);
     });
     it('sets activeStatus to active', async () => {
-      const usageLocations = [{ link: '/test', name: 'test' }];
+      const usageLocations = [{ display_location: 'test', url: '/test' }];
       axiosMock.onGet(`${getVideosUrl(courseId)}/${videoIds[0]}/usage`)
-        .reply(200, { usageLocations });
-      const expected = [{ id: videoIds[0], usageLocations, activeStatus: 'active' }];
+        .reply(200, { usage_locations: usageLocations });
+      const expected = [{
+        id: videoIds[0],
+        usageLocations: [{ displayLocation: 'test', url: '/test' }],
+        activeStatus: 'active',
+      }];
       const actual = await getAllUsagePaths({ courseId, videoIds });
       expect(actual).toEqual(expected);
     });
     it('sets activeStatus to inactive', async () => {
       const usageLocations = [];
       axiosMock.onGet(`${getVideosUrl(courseId)}/${videoIds[0]}/usage`)
-        .reply(200, { usageLocations });
+        .reply(200, { usage_locations: usageLocations });
       const expected = [{ id: videoIds[0], usageLocations, activeStatus: 'inactive' }];
       const actual = await getAllUsagePaths({ courseId, videoIds });
       expect(actual).toEqual(expected);
@@ -117,16 +123,17 @@ describe('api.js', () => {
   describe('uploadVideo', () => {
     it('PUTs to the provided URL', async () => {
       const mockUrl = 'mock.com';
-      const mockFile = { mock: 'file' } as unknown as File;
+      const mockFile = { mock: 'file', size: 1024 } as unknown as File;
       const mockVideoId = 'id123';
       const mockController = {} as AbortController;
-      const mockRef = {
+      const mockRef: UploadingIdsRef = {
         current: {
+          uploadCount: 1,
           uploadData: {
             id123: {
               progress: 0,
               name: 'test',
-              status: 'failed',
+              status: RequestStatus.FAILED,
             },
           },
         },
@@ -150,6 +157,28 @@ describe('api.js', () => {
       expect(actual).toEqual(expectedResult);
 
       expect(mockRef.current.uploadData.id123.progress).toEqual('40.00');
+    });
+
+    it('uses the file size when upload progress omits total', async () => {
+      const mockUrl = 'mock-without-total.com';
+      const mockFile = { name: 'test', size: 1024 } as unknown as File;
+      const mockVideoId = 'id123';
+      const uploadingIdsRef: UploadingIdsRef = {
+        current: {
+          uploadCount: 1,
+          uploadData: {
+            [mockVideoId]: { progress: 0, name: mockFile.name, status: RequestStatus.IN_PROGRESS },
+          },
+        },
+      };
+      axiosUnauthenticatedMock.onPut(mockUrl).reply((config) => {
+        config.onUploadProgress?.({ loaded: 512, total: undefined, bytes: 512, lengthComputable: true });
+        return [200, 'Something'];
+      });
+
+      await uploadVideo(mockUrl, mockFile, uploadingIdsRef, mockVideoId);
+
+      expect(uploadingIdsRef.current.uploadData[mockVideoId].progress).toEqual('50.00');
     });
   });
   describe('sendVideoUploadStatus', () => {

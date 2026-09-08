@@ -300,7 +300,16 @@ export const validateForm = (
   cieloHasCredentials: boolean | undefined,
   threePlayHasCredentials: boolean | undefined,
   provider: string | null | undefined,
-  data: Record<string, unknown>,
+  data: {
+    apiKey?: unknown;
+    apiSecretKey?: unknown;
+    username?: unknown;
+    cielo24Fidelity?: unknown;
+    cielo24Turnaround?: unknown;
+    threePlayTurnaround?: unknown;
+    videoSourceLanguage?: unknown;
+    preferredLanguages?: unknown;
+  },
 ): boolean => {
   const {
     apiKey,

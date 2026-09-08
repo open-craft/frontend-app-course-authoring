@@ -116,7 +116,7 @@ export const CourseVideosTable = () => {
       newUploadData({
         status: RequestStatus.PENDING,
         currentData: uploadingIdsRef.current.uploadData,
-        originalValue: { name, progress },
+        originalValue: { name, progress, status: RequestStatus.PENDING },
         key: `video_${idx}`,
         edxVideoId: undefined,
       });
