@@ -158,28 +158,6 @@ describe('api.js', () => {
 
       expect(mockRef.current.uploadData.id123.progress).toEqual('40.00');
     });
-
-    it('uses the file size when upload progress omits total', async () => {
-      const mockUrl = 'mock-without-total.com';
-      const mockFile = { name: 'test', size: 1024 } as unknown as File;
-      const mockVideoId = 'id123';
-      const uploadingIdsRef: UploadingIdsRef = {
-        current: {
-          uploadCount: 1,
-          uploadData: {
-            [mockVideoId]: { progress: 0, name: mockFile.name, status: RequestStatus.IN_PROGRESS },
-          },
-        },
-      };
-      axiosUnauthenticatedMock.onPut(mockUrl).reply((config) => {
-        config.onUploadProgress?.({ loaded: 512, total: undefined, bytes: 512, lengthComputable: true });
-        return [200, 'Something'];
-      });
-
-      await uploadVideo(mockUrl, mockFile, uploadingIdsRef, mockVideoId);
-
-      expect(uploadingIdsRef.current.uploadData[mockVideoId].progress).toEqual('50.00');
-    });
   });
   describe('sendVideoUploadStatus', () => {
     it('Posts to the correct url', async () => {

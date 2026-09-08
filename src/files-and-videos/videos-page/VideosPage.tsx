@@ -18,6 +18,7 @@ import { EditFileErrors } from '../generic';
 import { fetchVideos, resetErrors } from './data/thunks';
 import messages from './messages';
 import VideosPageProvider from './VideosPageProvider';
+import { VideoErrors } from './data/slice';
 
 const VideosPage = () => {
   const intl = useIntl();
@@ -31,7 +32,7 @@ const VideosPage = () => {
     errors: errorMessages,
   } = useSelector((state: DeprecatedReduxState) => state.videos);
 
-  const handleErrorReset = (error) => dispatch(resetErrors(error));
+  const handleErrorReset = (error: { errorType: keyof VideoErrors; }) => dispatch(resetErrors(error));
 
   useEffect(() => {
     dispatch(fetchVideos(courseId));
