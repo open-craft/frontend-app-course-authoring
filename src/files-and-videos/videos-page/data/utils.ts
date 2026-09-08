@@ -1,5 +1,7 @@
 import { ensureConfig, getConfig } from '@edx/frontend-platform';
 import { isArray, isEmpty } from 'lodash';
+import type { Dispatch } from 'redux';
+import type { Video, RawVideo } from './api';
 import {
   ASPECT_RATIO,
   ASPECT_RATIO_ERROR_MARGIN,
@@ -13,8 +15,8 @@ ensureConfig([
   'STUDIO_BASE_URL',
 ], 'Course Apps API service');
 
-export const updateFileValues = (files, isNewFile) => {
-  const updatedFiles = [];
+export const updateFileValues = (files: RawVideo[], isNewFile = false): Video[] => {
+  const updatedFiles: Video[] = [];
   files.forEach(file => {
     const {
       edxVideoId,
@@ -37,7 +39,7 @@ export const updateFileValues = (files, isNewFile) => {
     if (thumbnail && thumbnail.startsWith('/')) {
       thumbnail = `${getConfig().STUDIO_BASE_URL}${thumbnail}`;
     }
-    const transcriptStatus = transcripts?.length > 0 ? 'transcribed' : 'notTranscribed';
+    const transcriptStatus = transcripts && transcripts.length > 0 ? 'transcribed' : 'notTranscribed';
 
     updatedFiles.push({
       ...file,
@@ -55,18 +57,20 @@ export const updateFileValues = (files, isNewFile) => {
   return updatedFiles;
 };
 
-export const getFormattedDuration = (value) => {
+export const getFormattedDuration = (value: unknown): string => {
   if (!value || typeof value !== 'number' || value <= 0) {
     return '00:00:00';
   }
   const seconds = Math.floor(value % 60);
   const minutes = Math.floor((value / 60) % 60);
   const hours = Math.floor(value / 3600);
-  const zeroPad = (num) => String(num).padStart(2, '0');
+  const zeroPad = (num: number): string => String(num).padStart(2, '0');
   return [hours, minutes, seconds].map(zeroPad).join(':');
 };
 
-export const getLanguages = (availableLanguages) => {
+export const getLanguages = (
+  availableLanguages?: Array<{ languageCode: string; languageText: string; }> | null,
+): Record<string, string> => {
   const languages = {};
   availableLanguages?.forEach(language => {
     const { languageCode, languageText } = language;
@@ -75,15 +79,15 @@ export const getLanguages = (availableLanguages) => {
   return languages;
 };
 
-export const getSortedTranscripts = (languages, transcripts) => {
-  const transcriptDisplayNames = [];
+export const getSortedTranscripts = (languages: Record<string, string>, transcripts: string[]): string[] => {
+  const transcriptDisplayNames: string[] = [];
   transcripts.forEach(transcript => {
     const displayName = languages[transcript];
     transcriptDisplayNames.push(displayName);
   });
 
   const sortedTranscripts = transcriptDisplayNames.sort((a, b) => a.localeCompare(b));
-  const sortedTranscriptCodes = [];
+  const sortedTranscriptCodes: string[] = [];
   sortedTranscripts.forEach(transcript => {
     Object.entries(languages).forEach(([key, value]) => {
       if (value === transcript) {
@@ -95,7 +99,9 @@ export const getSortedTranscripts = (languages, transcripts) => {
   return sortedTranscriptCodes;
 };
 
-export const getSupportedFormats = (supportedFileFormats) => {
+export const getSupportedFormats = (
+  supportedFileFormats: string | string[] | Record<string, string | string[]> | null | undefined,
+): string | undefined => {
   if (isEmpty(supportedFileFormats)) {
     return undefined;
   }
@@ -105,11 +111,12 @@ export const getSupportedFormats = (supportedFileFormats) => {
   if (isArray(supportedFileFormats)) {
     return supportedFileFormats.join(', ');
   }
-  const supportedFormats = [];
-  Object.entries(supportedFileFormats).forEach(([key, value]) => {
+  const supportedFormats: string[] = [];
+  Object.entries(supportedFileFormats || {}).forEach(([key, value]) => {
+    const formatValue = value as string | string[];
     let format;
-    if (isArray(value)) {
-      value.forEach(val => {
+    if (isArray(formatValue)) {
+      formatValue.forEach(val => {
         if (val === '.mov') {
           format = key.replace('*', 'quicktime');
         } else {
@@ -118,10 +125,10 @@ export const getSupportedFormats = (supportedFileFormats) => {
         supportedFormats.push(format);
       });
     } else {
-      if (value === '.mov') {
+      if (formatValue === '.mov') {
         format = key.replace('*', 'quicktime');
       } else {
-        format = key.replace('*', value.substring(1));
+        format = key.replace('*', formatValue.substring(1));
       }
       supportedFormats.push(format);
     }
@@ -138,7 +145,9 @@ export const getSupportedFormats = (supportedFileFormats) => {
  * @param {string} mimeType - string of mimeType for the canvas
  * @return {File} new File object
  */
-export const createResampledFile = ({ canvasUrl, filename, mimeType }) => {
+export const createResampledFile = (
+  { canvasUrl, filename, mimeType }: { canvasUrl: string; filename: string; mimeType: string; },
+): File => {
   const arr = canvasUrl.split(',');
   const bstr = atob(arr[1]);
   let n = bstr.length;
@@ -157,9 +166,9 @@ export const createResampledFile = ({ canvasUrl, filename, mimeType }) => {
  * @param {string} filename - string of the image's filename
  * @return {array} array containing the base64 URL for the resampled image and the file containing the resampled image
  */
-export const resampleImage = ({ image, filename }) => {
+export const resampleImage = ({ image, filename }: { image: HTMLImageElement; filename: string; }): File => {
   const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
 
   // Determine new dimensions for image
   if (image.naturalWidth > MAX_WIDTH) {
@@ -184,7 +193,7 @@ export const resampleImage = ({ image, filename }) => {
   return resampledFile;
 };
 
-export const hasValidDimensions = ({ width, height }) => {
+export const hasValidDimensions = ({ width, height }: { width: number; height: number; }): boolean => {
   const imageAspectRatio = Math.abs((width / height) - ASPECT_RATIO);
 
   if (width < MIN_WIDTH || height < MIN_HEIGHT) {
@@ -202,11 +211,17 @@ export const resampleFile = ({
   videoId,
   courseId,
   addVideoThumbnail,
-}) => {
+}: {
+  file: File;
+  dispatch: Dispatch<any>; // Redux dispatch also accepts thunk functions in this legacy flow.
+  videoId: string;
+  courseId: string;
+  addVideoThumbnail: (args: { file: File; videoId: string; courseId: string; }) => unknown;
+}): void => {
   const reader = new FileReader();
   const image = new Image();
   reader.onload = () => {
-    image.src = reader.result;
+    image.src = reader.result as string;
     image.onload = () => {
       const width = image.naturalWidth;
       const height = image.naturalHeight;
@@ -221,8 +236,11 @@ export const resampleFile = ({
   reader.readAsDataURL(file);
 };
 
-export const getLanguageOptions = (keys, languages) => {
-  const options = {};
+export const getLanguageOptions = (
+  keys: string[] | null | undefined,
+  languages: Record<string, string>,
+): Record<string, string> => {
+  const options: Record<string, string> = {};
   if (keys) {
     keys.forEach(key => {
       options[key] = languages[key];
@@ -231,8 +249,8 @@ export const getLanguageOptions = (keys, languages) => {
   return options;
 };
 
-export const getFidelityOptions = (fidelities) => {
-  const options = {};
+export const getFidelityOptions = (fidelities: Record<string, { display_name: string; }>): Record<string, string> => {
+  const options: Record<string, string> = {};
   Object.entries(fidelities).forEach(([key, value]) => {
     const { display_name: displayName } = value;
     options[key] = displayName;
@@ -240,30 +258,50 @@ export const getFidelityOptions = (fidelities) => {
   return options;
 };
 
-export const checkCredentials = (transcriptCredentials) => {
+export const checkCredentials = (transcriptCredentials: {
+  cielo24?: boolean;
+  '3PlayMedia'?: boolean;
+}): [boolean, boolean] => {
   const cieloHasCredentials = transcriptCredentials.cielo24;
   const threePlayHasCredentials = transcriptCredentials['3PlayMedia'];
-  return [cieloHasCredentials, threePlayHasCredentials];
+  return [cieloHasCredentials as boolean, threePlayHasCredentials as boolean];
 };
 
-export const checkTranscriptionPlans = (transcriptionPlans) => {
-  let cieloIsValid = !isEmpty(transcriptionPlans.Cielo24);
-  let threePlayIsValid = !isEmpty(transcriptionPlans['3PlayMedia']);
+export const checkTranscriptionPlans = (
+  transcriptionPlans: Record<
+    string,
+    {
+      fidelity?: unknown;
+      turnaround?: unknown;
+      languages?: unknown;
+      translations?: unknown;
+    } | undefined
+  >,
+): [boolean, boolean] => {
+  const cieloPlan = transcriptionPlans.Cielo24 || {};
+  const threePlayPlan = transcriptionPlans['3PlayMedia'] || {};
+  let cieloIsValid = !isEmpty(cieloPlan);
+  let threePlayIsValid = !isEmpty(threePlayPlan);
 
   if (cieloIsValid) {
-    const { fidelity, turnaround } = transcriptionPlans.Cielo24;
+    const { fidelity, turnaround } = cieloPlan;
     cieloIsValid = !isEmpty(fidelity) && !isEmpty(turnaround);
   }
 
   if (threePlayIsValid) {
-    const { languages, turnaround, translations } = transcriptionPlans['3PlayMedia'];
+    const { languages, turnaround, translations } = threePlayPlan;
     threePlayIsValid = !isEmpty(turnaround) && !isEmpty(languages) && !isEmpty(translations);
   }
 
   return [cieloIsValid, threePlayIsValid];
 };
 
-export const validateForm = (cieloHasCredentials, threePlayHasCredentials, provider, data) => {
+export const validateForm = (
+  cieloHasCredentials: boolean | undefined,
+  threePlayHasCredentials: boolean | undefined,
+  provider: string | null | undefined,
+  data: Record<string, unknown>,
+): boolean => {
   const {
     apiKey,
     apiSecretKey,

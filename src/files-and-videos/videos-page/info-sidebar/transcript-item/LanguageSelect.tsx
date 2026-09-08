@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import PropTypes from 'prop-types';
 import { FormattedMessage, useIntl } from '@edx/frontend-platform/i18n';
 
 import {
@@ -20,6 +19,15 @@ import {
 } from '@openedx/paragon/icons';
 import { isEmpty } from 'lodash';
 
+type LanguageSelectProps = {
+  value: string;
+  options: Record<string, string>;
+  handleSelect: (value: string) => void;
+  placeholderText: string;
+  previousSelection: string[];
+  className?: string;
+};
+
 const LanguageSelect = ({
   value,
   previousSelection,
@@ -27,12 +35,12 @@ const LanguageSelect = ({
   handleSelect,
   placeholderText,
   className = 'col-9 p-0',
-}) => {
+}: LanguageSelectProps) => {
   const intl = useIntl();
   const currentSelection = isEmpty(value) ? placeholderText : options[value];
 
   const [isOpen, , close, toggle] = useToggle();
-  const [target, setTarget] = useState(null);
+  const [target, setTarget] = useState<HTMLButtonElement | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -137,15 +145,6 @@ const LanguageSelect = ({
       </ModalPopup>
     </>
   );
-};
-
-LanguageSelect.propTypes = {
-  value: PropTypes.string.isRequired,
-  options: PropTypes.shape({}).isRequired,
-  handleSelect: PropTypes.func.isRequired,
-  placeholderText: PropTypes.string.isRequired,
-  previousSelection: PropTypes.arrayOf(PropTypes.string).isRequired,
-  className: PropTypes.string,
 };
 
 export default LanguageSelect;

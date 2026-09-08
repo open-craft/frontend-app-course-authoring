@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
 import {
   ActionRow,
   AlertModal,
@@ -20,6 +19,16 @@ import { FileInput, useFileInput } from '../../../generic';
 import TranscriptEditor from '../../transcript-editor';
 import { isValidSrt } from '../../transcript-editor/srtUtils';
 
+type TranscriptData = { language: string; newLanguage?: string; file?: File; };
+type TranscriptProps = {
+  languages: Record<string, string>;
+  transcript: string;
+  previousSelection: string[];
+  handleTranscript: (data: TranscriptData, action: 'delete' | 'download' | 'upload') => void;
+  video: { id: string; displayName: string; downloadLink?: string; };
+  transcriptSettings: { transcriptDownloadHandlerUrl: string; transcriptUploadHandlerUrl: string; };
+};
+
 const Transcript = ({
   languages,
   transcript,
@@ -27,7 +36,7 @@ const Transcript = ({
   handleTranscript,
   video,
   transcriptSettings,
-}) => {
+}: TranscriptProps) => {
   const intl = useIntl();
   const [isConfirmationOpen, openConfirmation, closeConfirmation] = useToggle();
   const [newLanguage, setNewLanguage] = useState(transcript);
@@ -150,22 +159,6 @@ const Transcript = ({
       />
     </>
   );
-};
-
-Transcript.propTypes = {
-  languages: PropTypes.shape({}).isRequired,
-  transcript: PropTypes.string.isRequired,
-  previousSelection: PropTypes.arrayOf(PropTypes.string).isRequired,
-  handleTranscript: PropTypes.func.isRequired,
-  video: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    displayName: PropTypes.string.isRequired,
-    downloadLink: PropTypes.string,
-  }).isRequired,
-  transcriptSettings: PropTypes.shape({
-    transcriptDownloadHandlerUrl: PropTypes.string.isRequired,
-    transcriptUploadHandlerUrl: PropTypes.string.isRequired,
-  }).isRequired,
 };
 
 export default Transcript;

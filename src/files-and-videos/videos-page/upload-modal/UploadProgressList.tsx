@@ -1,10 +1,12 @@
 import React from 'react';
-import PropTypes from 'prop-types';
 import { Stack, Truncate } from '@openedx/paragon';
 import UploadStatusIcon from './UploadStatusIcon';
 import { RequestStatus } from '../../../data/constants';
 
-const getVideoStatus = (status) => {
+type UploadVideo = { name: string; status: string; uploadPercentage: string | number; };
+type UploadProgressListProps = { videosList: [string, UploadVideo][]; };
+
+const getVideoStatus = (status: string) => {
   switch (status) {
     case RequestStatus.IN_PROGRESS:
       return 'UPLOADING';
@@ -17,7 +19,7 @@ const getVideoStatus = (status) => {
   }
 };
 
-const UploadProgressList = ({ videosList }) => (
+const UploadProgressList = ({ videosList }: UploadProgressListProps) => (
   <div role="list" className="text-primary-500">
     {videosList.map(([id, video], index) => {
       const bulletNumber = `${index + 1}. `;
@@ -40,16 +42,5 @@ const UploadProgressList = ({ videosList }) => (
     })}
   </div>
 );
-
-UploadProgressList.propTypes = {
-  videosList: PropTypes.arrayOf(PropTypes.shape({
-    name: PropTypes.string.isRequired,
-    status: PropTypes.string.isRequired,
-    uploadPercentage: PropTypes.oneOfType([
-      PropTypes.string,
-      PropTypes.number,
-    ]).isRequired,
-  })).isRequired,
-};
 
 export default UploadProgressList;

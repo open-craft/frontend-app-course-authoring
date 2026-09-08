@@ -37,7 +37,7 @@ describe('getSupportedFormats', () => {
 
 describe('createResampledFile', () => {
   it('should return resampled file object', () => {
-    const expected = new File([{ name: 'imageName', size: 20000 }], 'testVALUEVALIDIMAGE');
+    const expected = new File([{ name: 'imageName', size: 20000 } as unknown as BlobPart], 'testVALUEVALIDIMAGE');
     const actual = createResampledFile({
       canvasUrl: 'data:MimETYpe,sOMEUrl',
       filename: 'imageName',
@@ -50,10 +50,13 @@ describe('createResampledFile', () => {
 
 describe('resampleImage', () => {
   it('should return filename and file', () => {
-    const resampledFile = new File([{ name: 'testVALUEVALIDIMAGE', size: 20000 }], 'testVALUEVALIDIMAGE');
+    const resampledFile = new File(
+      [{ name: 'testVALUEVALIDIMAGE', size: 20000 } as unknown as BlobPart],
+      'testVALUEVALIDIMAGE',
+    );
     const image = document.createElement('img');
-    image.height = '800';
-    image.width = '800';
+    image.height = '800' as unknown as number;
+    image.width = '800' as unknown as number;
     const actualImage = resampleImage({ image, filename: 'testVALUEVALIDIMAGE' });
 
     expect(actualImage).toEqual(resampledFile);

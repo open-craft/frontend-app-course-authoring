@@ -1,12 +1,19 @@
 import React from 'react';
-import PropTypes from 'prop-types';
 import { Stack } from '@openedx/paragon';
 import { FormattedDate, FormattedMessage } from '@edx/frontend-platform/i18n';
 import { getFileSizeToClosestByte } from '../../../utils';
 import { getFormattedDuration } from '../data/utils';
 import messages from './messages';
 
-const InfoTab = ({ video }) => {
+type InfoVideo = {
+  duration?: number;
+  dateAdded?: string;
+  fileSize?: number;
+};
+
+type InfoTabProps = { video?: InfoVideo; };
+
+const InfoTab = ({ video = {} }: InfoTabProps) => {
   const fileSize = getFileSizeToClosestByte(video?.fileSize);
   const duration = getFormattedDuration(video?.duration);
 
@@ -33,18 +40,6 @@ const InfoTab = ({ video }) => {
       {duration}
     </Stack>
   );
-};
-
-InfoTab.propTypes = {
-  video: PropTypes.shape({
-    duration: PropTypes.number.isRequired,
-    dateAdded: PropTypes.string.isRequired,
-    fileSize: PropTypes.number.isRequired,
-  }),
-};
-
-InfoTab.defaultProps = {
-  video: {},
 };
 
 export default InfoTab;

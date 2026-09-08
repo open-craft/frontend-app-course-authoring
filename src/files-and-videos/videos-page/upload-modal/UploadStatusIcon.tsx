@@ -1,10 +1,9 @@
 import React from 'react';
-import PropTypes from 'prop-types';
 import { Icon, Spinner } from '@openedx/paragon';
 import { Check, ErrorOutline } from '@openedx/paragon/icons';
 import { RequestStatus } from '../../../data/constants';
 
-const UploadStatusIcon = ({ status }) => {
+const UploadStatusIcon = ({ status = null }: { status?: string | null; }) => {
   switch (status) {
     case RequestStatus.SUCCESSFUL:
       return <Icon src={Check} />;
@@ -21,13 +20,6 @@ const UploadStatusIcon = ({ status }) => {
     default:
       return <div style={{ width: '24px' }} />;
   }
-};
-
-UploadStatusIcon.defaultProps = {
-  status: null,
-};
-UploadStatusIcon.propTypes = {
-  status: PropTypes.string,
 };
 
 export default UploadStatusIcon;

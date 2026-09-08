@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
 import { FormattedMessage, FormattedDate, useIntl } from '@edx/frontend-platform/i18n';
 import { Button, Stack } from '@openedx/paragon';
 import ErrorAlert from '../../../editors/sharedComponents/ErrorAlerts/ErrorAlert';
@@ -9,6 +8,21 @@ import ThreePlayMediaForm from './ThreePlayMediaForm';
 import { RequestStatus } from '../../../data/constants';
 import messages from './messages';
 import { checkCredentials, checkTranscriptionPlans, validateForm } from '../data/utils';
+import type { TranscriptCredentials, TranscriptPreferences, TranscriptionPlans } from '../data/api';
+
+type TranscriptData = TranscriptPreferences & TranscriptCredentials;
+
+type OrderTranscriptFormProps = {
+  setTranscriptType: (type: string | null) => void;
+  activeTranscriptPreferences?: TranscriptData | null;
+  transcriptType: string;
+  transcriptCredentials: Record<string, boolean>;
+  closeTranscriptSettings: () => void;
+  handleOrderTranscripts: (data: TranscriptData, provider: string) => void;
+  transcriptionPlans: TranscriptionPlans;
+  errorMessages: { transcript: string[]; };
+  transcriptStatus: string;
+};
 
 const OrderTranscriptForm = ({
   setTranscriptType,
@@ -20,7 +34,7 @@ const OrderTranscriptForm = ({
   transcriptionPlans,
   errorMessages,
   transcriptStatus,
-}) => {
+}: OrderTranscriptFormProps) => {
   const intl = useIntl();
   const [data, setData] = useState(activeTranscriptPreferences || { videoSourceLanguage: '' });
 
@@ -40,7 +54,7 @@ const OrderTranscriptForm = ({
   }, [data]);
 
   const handleDiscard = () => {
-    setTranscriptType(activeTranscriptPreferences?.provider);
+    setTranscriptType(activeTranscriptPreferences?.provider || null);
     closeTranscriptSettings();
   };
 
@@ -159,45 +173,6 @@ const OrderTranscriptForm = ({
       </Stack>
     </>
   );
-};
-
-OrderTranscriptForm.propTypes = {
-  setTranscriptType: PropTypes.func.isRequired,
-  activeTranscriptPreferences: PropTypes.shape({
-    provider: PropTypes.string.isRequired,
-    cielo24Turnaround: PropTypes.string,
-    cielo24Fidelity: PropTypes.string,
-    preferredLanguages: PropTypes.arrayOf(PropTypes.string),
-    turnaround: PropTypes.string,
-    videoSourceLanguage: PropTypes.string,
-    modified: PropTypes.instanceOf(Date),
-  }),
-  transcriptType: PropTypes.string.isRequired,
-  transcriptCredentials: PropTypes.shape({
-    cielo24: PropTypes.bool.isRequired,
-    '3PlayMedia': PropTypes.bool.isRequired,
-  }).isRequired,
-  closeTranscriptSettings: PropTypes.func.isRequired,
-  transcriptStatus: PropTypes.string.isRequired,
-  errorMessages: PropTypes.shape({
-    transcript: PropTypes.arrayOf(PropTypes.string).isRequired,
-  }).isRequired,
-  handleOrderTranscripts: PropTypes.func.isRequired,
-  transcriptionPlans: PropTypes.shape({
-    Cielo24: PropTypes.shape({
-      turnaround: PropTypes.shape({}),
-      fidelity: PropTypes.shape({}),
-    }).isRequired,
-    '3PlayMedia': PropTypes.shape({
-      turnaround: PropTypes.shape({}),
-      translations: PropTypes.shape({}),
-      languages: PropTypes.shape({}),
-    }).isRequired,
-  }).isRequired,
-};
-
-OrderTranscriptForm.defaultProps = {
-  activeTranscriptPreferences: null,
 };
 
 export default OrderTranscriptForm;

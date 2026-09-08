@@ -1,4 +1,4 @@
-import { RequestStatus } from '../../../data/constants';
+import { RequestStatus, type RequestStatusType } from '../../../data/constants';
 
 export const courseId = 'course';
 
@@ -307,7 +307,7 @@ export const generateNewVideoApiResponse = () => ({
   }],
 });
 
-export const getStatusValue = (status) => {
+export const getStatusValue = (status: RequestStatusType): number => {
   switch (status) {
     case RequestStatus.DENIED:
       return 403;

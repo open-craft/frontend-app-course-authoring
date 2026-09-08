@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import PropTypes from 'prop-types';
+import React, { CSSProperties, useState } from 'react';
 import { useIntl } from '@edx/frontend-platform/i18n';
 import { VideoFile } from '@openedx/paragon/icons';
 import {
@@ -13,8 +12,24 @@ import messages from './messages';
 import { VIDEO_SUCCESS_STATUSES, VIDEO_FAILURE_STATUSES } from './data/constants';
 import { RequestStatus } from '../../data/constants';
 
+interface VideoImageSettings {
+  videoImageUploadEnabled: boolean;
+  supportedFileFormats?: Record<string, string>;
+}
+
+interface VideoThumbnailProps {
+  thumbnail?: string | null;
+  displayName: string;
+  id: string;
+  imageSize: CSSProperties;
+  handleAddThumbnail: (file: File, videoId: string) => void;
+  videoImageSettings: VideoImageSettings;
+  status: string;
+  pageLoadStatus: string;
+}
+
 const VideoThumbnail = ({
-  thumbnail,
+  thumbnail = null,
   displayName,
   id,
   imageSize,
@@ -22,7 +37,7 @@ const VideoThumbnail = ({
   videoImageSettings,
   status,
   pageLoadStatus,
-}) => {
+}: VideoThumbnailProps) => {
   const intl = useIntl();
   const fileInputControl = useFileInput({
     onAddFile: (files) => {
@@ -42,8 +57,8 @@ const VideoThumbnail = ({
     }
   }
   const supportedFiles = videoImageSettings?.supportedFileFormats
-    ? Object.values(videoImageSettings.supportedFileFormats) :
-    null;
+    ? Object.values(videoImageSettings.supportedFileFormats)
+    : undefined;
   const isUploaded = VIDEO_SUCCESS_STATUSES.includes(status);
   const isFailed = VIDEO_FAILURE_STATUSES.includes(status);
   const failedMessage = intl.formatMessage(messages.failedCheckboxLabel);
@@ -116,26 +131,4 @@ const VideoThumbnail = ({
     </div>
   );
 };
-
-VideoThumbnail.propTypes = {
-  thumbnail: PropTypes.string,
-  displayName: PropTypes.string.isRequired,
-  id: PropTypes.string.isRequired,
-  imageSize: PropTypes.shape({
-    width: PropTypes.string,
-    height: PropTypes.string,
-  }).isRequired,
-  handleAddThumbnail: PropTypes.func.isRequired,
-  videoImageSettings: PropTypes.shape({
-    videoImageUploadEnabled: PropTypes.bool.isRequired,
-    supportedFileFormats: PropTypes.shape({}),
-  }).isRequired,
-  status: PropTypes.string.isRequired,
-  pageLoadStatus: PropTypes.string.isRequired,
-};
-
-VideoThumbnail.defaultProps = {
-  thumbnail: null,
-};
-
 export default VideoThumbnail;

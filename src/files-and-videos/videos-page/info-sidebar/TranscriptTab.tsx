@@ -4,7 +4,7 @@ import React, {
   useState,
   useRef,
 } from 'react';
-import PropTypes from 'prop-types';
+import type { VideosState } from '../data/slice';
 import { useDispatch, useSelector } from 'react-redux';
 import { isEmpty } from 'lodash';
 import {
@@ -40,13 +40,19 @@ import { RequestStatus } from '../../../data/constants';
 import messages from './messages';
 import { isValidSrt } from '../transcript-editor/srtUtils';
 
-const TranscriptTab = ({
-  video,
-}) => {
+type TranscriptVideo = { transcripts: string[]; id: string; displayName: string; };
+type TranscriptData = { language: string; newLanguage?: string; file?: File; };
+type TranscriptTabProps = { video: TranscriptVideo; };
+
+type TranscriptState = VideosState;
+
+const TranscriptTab = ({ video }: TranscriptTabProps) => {
   const intl = useIntl();
   const dispatch = useDispatch();
-  const divRef = useRef(null);
-  const { transcriptStatus, errors } = useSelector(state => state.videos);
+  const divRef = useRef<HTMLDivElement>(null);
+  const { transcriptStatus, errors } = useSelector(
+    (state: { videos: VideosState; }) => state.videos,
+  );
   const {
     transcriptAvailableLanguages,
     videoTranscriptSettings,
@@ -57,12 +63,12 @@ const TranscriptTab = ({
     transcriptDownloadHandlerUrl,
   } = videoTranscriptSettings;
   const { transcripts, id, displayName } = video;
-  const languages = useMemo(
+  const languages = useMemo<Record<string, string>>(
     () => getLanguages(transcriptAvailableLanguages),
     [transcriptAvailableLanguages],
   );
   let sortedTranscripts = getSortedTranscripts(languages, transcripts);
-  const [previousSelection, setPreviousSelection] = useState(sortedTranscripts);
+  const [previousSelection, setPreviousSelection] = useState<string[]>(sortedTranscripts);
   const [isAddingTranscript, setIsAddingTranscript] = useState(false);
   const [newLanguage, setNewLanguage] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -145,7 +151,7 @@ const TranscriptTab = ({
     }
   }, [isSubmittingReplace, transcriptStatus]);
 
-  const handleTranscript = (data, actionType) => {
+  const handleTranscript = (data: TranscriptData, actionType: 'delete' | 'download' | 'upload') => {
     const {
       language,
       newLanguage: transcriptNewLanguage,
@@ -381,14 +387,6 @@ const TranscriptTab = ({
       </Toast>
     </Stack>
   );
-};
-
-TranscriptTab.propTypes = {
-  video: PropTypes.shape({
-    transcripts: PropTypes.arrayOf(PropTypes.string).isRequired,
-    id: PropTypes.string.isRequired,
-    displayName: PropTypes.string.isRequired,
-  }).isRequired,
 };
 
 export default TranscriptTab;

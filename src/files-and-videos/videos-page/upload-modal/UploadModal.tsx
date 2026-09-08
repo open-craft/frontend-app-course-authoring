@@ -1,5 +1,4 @@
 import React from 'react';
-import PropTypes from 'prop-types';
 import { useIntl } from '@edx/frontend-platform/i18n';
 import {
   ActionRow,
@@ -14,19 +13,34 @@ import messages from '../messages';
 import UploadProgressList from './UploadProgressList';
 import { RequestStatus } from '../../../data/constants';
 
+const LegacyModalDialog = ModalDialog as unknown as React.ComponentType<
+  Omit<React.ComponentProps<typeof ModalDialog>, 'isOverflowVisible'>
+>;
+const LegacyHyperlink = Hyperlink as unknown as React.ComponentType<
+  Omit<React.ComponentProps<typeof Hyperlink>, 'children'>
+>;
+
+type UploadVideo = { name: string; status: string; uploadPercentage: string | number; };
+type UploadModalProps = {
+  isUploadTrackerOpen: boolean;
+  handleUploadCancel: () => void;
+  currentUploadingIdsRef: { uploadData: Record<string, UploadVideo>; uploadCount: number; };
+  addVideoStatus: string;
+};
+
 const UploadModal = ({
   isUploadTrackerOpen,
   handleUploadCancel,
   currentUploadingIdsRef,
   addVideoStatus,
-}) => {
+}: UploadModalProps) => {
   const intl = useIntl();
   const videosPagePath = '';
   const { uploadData, uploadCount } = currentUploadingIdsRef;
   const cancelIsDisabled = addVideoStatus === RequestStatus.FAILED || addVideoStatus === RequestStatus.SUCCESSFUL;
 
   return (
-    <ModalDialog
+    <LegacyModalDialog
       title={intl.formatMessage(messages.videoUploadTrackerModalTitle)}
       isOpen={isUploadTrackerOpen}
       onClose={handleUploadCancel}
@@ -50,7 +64,7 @@ const UploadModal = ({
             <span className="font-weight-bold">
               {intl.formatMessage(messages.videoUploadTrackerAlertEditMessage)}
             </span>
-            <Hyperlink
+            <LegacyHyperlink
               className="ml-2"
               destination={videosPagePath}
               target="_blank"
@@ -77,22 +91,8 @@ const UploadModal = ({
           </Button>
         </ActionRow>
       </ModalDialog.Footer>
-    </ModalDialog>
+    </LegacyModalDialog>
   );
-};
-
-UploadModal.propTypes = {
-  isUploadTrackerOpen: PropTypes.bool.isRequired,
-  handleUploadCancel: PropTypes.func.isRequired,
-  currentUploadingIdsRef: PropTypes.shape({
-    uploadData: PropTypes.shape({
-      name: PropTypes.string,
-      status: PropTypes.string,
-      uploadPercentage: PropTypes.number,
-    }).isRequired,
-    uploadCount: PropTypes.number.isRequired,
-  }).isRequired,
-  addVideoStatus: PropTypes.string.isRequired,
 };
 
 export default UploadModal;

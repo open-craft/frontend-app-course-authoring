@@ -33,12 +33,12 @@ const defaultProps = {
 let axiosMock;
 let store;
 
-const renderComponent = () => {
+const renderComponent = (props = defaultProps) => {
   render(
     <IntlProvider locale="en">
       <AppProvider store={store}>
         <VideosProvider courseId={courseId}>
-          <TranscriptSettings {...defaultProps} />
+          <TranscriptSettings {...props} />
         </VideosProvider>
       </AppProvider>
     </IntlProvider>,

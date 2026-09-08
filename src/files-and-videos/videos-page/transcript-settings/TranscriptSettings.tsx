@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import PropTypes from 'prop-types';
+import type { TranscriptCredentials, TranscriptPreferences, TranscriptionPlans } from '../data/api';
+import type { VideosState } from '../data/slice';
 import { isEmpty } from 'lodash';
 import { useDispatch, useSelector } from 'react-redux';
 import { FormattedMessage } from '@edx/frontend-platform/i18n';
@@ -22,13 +23,29 @@ import {
   updateTranscriptPreference,
 } from '../data/thunks';
 
+type TranscriptFormData = TranscriptPreferences & TranscriptCredentials;
+type TranscriptSettingsPageSettings = {
+  activeTranscriptPreferences?: TranscriptPreferences | null;
+  transcriptCredentials: Record<string, boolean>;
+  videoTranscriptSettings: { transcriptionPlans: TranscriptionPlans; };
+  isAiTranslationsEnabled: boolean;
+};
+type TranscriptSettingsState = Omit<VideosState, 'pageSettings'> & { pageSettings: TranscriptSettingsPageSettings; };
+type TranscriptSettingsProps = {
+  isTranscriptSettingsOpen: boolean;
+  closeTranscriptSettings: () => void;
+  courseId: string;
+};
+
 const TranscriptSettings = ({
   isTranscriptSettingsOpen,
   closeTranscriptSettings,
   courseId,
-}) => {
+}: TranscriptSettingsProps) => {
   const dispatch = useDispatch();
-  const { errors: errorMessages, pageSettings, transcriptStatus } = useSelector(state => state.videos);
+  const { errors: errorMessages, pageSettings, transcriptStatus } = useSelector(
+    (state: { videos: TranscriptSettingsState; }) => state.videos,
+  );
   const {
     activeTranscriptPreferences,
     transcriptCredentials,
@@ -36,10 +53,10 @@ const TranscriptSettings = ({
     isAiTranslationsEnabled,
   } = pageSettings;
   const { transcriptionPlans } = videoTranscriptSettings || {};
-  const [transcriptType, setTranscriptType] = useState(null);
+  const [transcriptType, setTranscriptType] = useState<string | null>(null);
   const [isAiTranslations, setIsAiTranslations] = useState(false);
 
-  const handleOrderTranscripts = (data, provider) => {
+  const handleOrderTranscripts = (data: TranscriptFormData, provider: string) => {
     const noCredentials = isEmpty(transcriptCredentials) || data.apiKey;
     dispatch(resetErrors({ errorType: 'transcript' }));
     if (provider === 'order') {
@@ -123,7 +140,7 @@ const TranscriptSettings = ({
               setIsAiTranslations={setIsAiTranslations}
               closeTranscriptSettings={closeTranscriptSettings}
               courseId={courseId}
-              transcriptType={transcriptType}
+              transcriptType={transcriptType as string}
               isAiTranslationsEnabled={isAiTranslationsEnabled}
             />
           </div>
@@ -131,12 +148,6 @@ const TranscriptSettings = ({
       </div>
     </Sheet>
   );
-};
-
-TranscriptSettings.propTypes = {
-  closeTranscriptSettings: PropTypes.func.isRequired,
-  isTranscriptSettingsOpen: PropTypes.bool.isRequired,
-  courseId: PropTypes.string.isRequired,
 };
 
 export default TranscriptSettings;

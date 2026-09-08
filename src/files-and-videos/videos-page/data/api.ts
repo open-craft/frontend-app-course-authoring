@@ -74,7 +74,7 @@ export async function downloadTranscript({
   language,
   apiUrl,
   filename,
-}) {
+}: { videoId: string; language: string; apiUrl: string; filename: string; }): Promise<void> {
   const data = await fetchTranscriptContent({ videoId, language, apiUrl });
   const file = new Blob([data], { type: 'text/plain;charset=utf-8' });
   saveAs(file, filename);
@@ -84,7 +84,7 @@ export async function fetchTranscriptContent({
   videoId,
   language,
   apiUrl,
-}) {
+}: { videoId: string; language: string; apiUrl: string; }): Promise<string> {
   const { data } = await getAuthenticatedHttpClient()
     .get(`${getApiBaseUrl()}${apiUrl}?edx_video_id=${videoId}&language_code=${language}`);
   return data;

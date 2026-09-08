@@ -1,13 +1,22 @@
 import React from 'react';
-import PropTypes from 'prop-types';
 import { useIntl } from '@edx/frontend-platform/i18n';
 import { Stack } from '@openedx/paragon';
 import TranscriptTab from './TranscriptTab';
 import messages from './messages';
 
-const VideoInfoModalSidebar = ({
-  video,
-}) => {
+type Video = {
+  displayName: string;
+  wrapperType: string;
+  id: string;
+  dateAdded: string;
+  fileSize: number;
+  transcripts: string[];
+  transcriptionStatus: string;
+};
+
+type VideoInfoModalSidebarProps = { video: Video; };
+
+const VideoInfoModalSidebar = ({ video }: VideoInfoModalSidebarProps) => {
   const intl = useIntl();
 
   return (
@@ -18,22 +27,6 @@ const VideoInfoModalSidebar = ({
       <TranscriptTab {...{ video }} />
     </Stack>
   );
-};
-
-VideoInfoModalSidebar.propTypes = {
-  video: PropTypes.shape({
-    displayName: PropTypes.string.isRequired,
-    wrapperType: PropTypes.string.isRequired,
-    id: PropTypes.string.isRequired,
-    dateAdded: PropTypes.string.isRequired,
-    fileSize: PropTypes.number.isRequired,
-    transcripts: PropTypes.arrayOf(PropTypes.string),
-    transcriptionStatus: PropTypes.string.isRequired,
-  }),
-};
-
-VideoInfoModalSidebar.defaultProps = {
-  video: null,
 };
 
 export default VideoInfoModalSidebar;

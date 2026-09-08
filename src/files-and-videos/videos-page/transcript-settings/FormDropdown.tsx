@@ -1,8 +1,17 @@
 import React from 'react';
 import { Dropdown, Form, Icon } from '@openedx/paragon';
-import PropTypes from 'prop-types';
 import { Check } from '@openedx/paragon/icons';
 import { isArray, isEmpty } from 'lodash';
+
+export type FormDropdownValue = string | [string, boolean];
+
+type FormDropdownProps = {
+  value: string | string[] | undefined;
+  allowMultiple?: boolean;
+  options: Record<string, string>;
+  handleSelect: (value: FormDropdownValue) => void;
+  placeholderText: string;
+};
 
 const FormDropdown = ({
   value,
@@ -10,12 +19,12 @@ const FormDropdown = ({
   options,
   handleSelect,
   placeholderText,
-}) => {
+}: FormDropdownProps) => {
   let currentSelection;
   if (isEmpty(value)) {
     currentSelection = placeholderText;
   } else {
-    currentSelection = isArray(value) && value.length > 1 ? 'Multiple' : options[value];
+    currentSelection = isArray(value) && value.length > 1 ? 'Multiple' : options[String(value)];
   }
 
   return (
@@ -37,7 +46,7 @@ const FormDropdown = ({
             return (
               <Dropdown.Item
                 as={Form.Checkbox}
-                checked={value.includes(valueKey)}
+                checked={Array.isArray(value) && value.includes(valueKey)}
                 onChange={(e) => handleSelect([valueKey, e.target.checked])}
                 key={`${valueKey}-item`}
               >
@@ -62,18 +71,6 @@ const FormDropdown = ({
       </Dropdown.Menu>
     </Dropdown>
   );
-};
-
-FormDropdown.propTypes = {
-  value: PropTypes.oneOfType([PropTypes.string, PropTypes.arrayOf(PropTypes.string)]).isRequired,
-  allowMultiple: PropTypes.bool,
-  options: PropTypes.shape({}).isRequired,
-  handleSelect: PropTypes.func.isRequired,
-  placeholderText: PropTypes.string.isRequired,
-};
-
-FormDropdown.defaultProps = {
-  allowMultiple: false,
 };
 
 export default FormDropdown;

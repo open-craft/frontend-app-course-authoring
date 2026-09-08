@@ -1,27 +1,35 @@
 import React from 'react';
-import PropTypes from 'prop-types';
 import { isEmpty } from 'lodash';
 import { FormattedMessage, useIntl } from '@edx/frontend-platform/i18n';
 import { Form, Stack, TransitionReplace } from '@openedx/paragon';
 import FormDropdown from './FormDropdown';
 import { getFidelityOptions } from '../data/utils';
+import type { TranscriptCredentials, TranscriptPreferences, TranscriptionPlan } from '../data/api';
 import messages from './messages';
+
+type TranscriptData = TranscriptPreferences & TranscriptCredentials;
+type Cielo24FormProps = {
+  hasTranscriptCredentials: boolean;
+  data: TranscriptData;
+  setData: (data: TranscriptData) => void;
+  transcriptionPlan: TranscriptionPlan;
+};
 
 const Cielo24Form = ({
   hasTranscriptCredentials,
   data,
   setData,
   transcriptionPlan,
-}) => {
+}: Cielo24FormProps) => {
   const intl = useIntl();
   if (hasTranscriptCredentials) {
     const { fidelity } = transcriptionPlan;
     const selectedLanguage = data.preferredLanguages ? data.preferredLanguages : '';
-    const turnaroundOptions = transcriptionPlan.turnaround;
-    const fidelityOptions = getFidelityOptions(fidelity);
-    const sourceLanguageOptions = data.cielo24Fidelity ? fidelity[data.cielo24Fidelity]?.languages : {};
+    const turnaroundOptions = transcriptionPlan.turnaround!;
+    const fidelityOptions = getFidelityOptions(fidelity!);
+    const sourceLanguageOptions = data.cielo24Fidelity ? (fidelity![data.cielo24Fidelity]?.languages || {}) : {};
     const languages = data.cielo24Fidelity === 'PROFESSIONAL' ? sourceLanguageOptions : {
-      [data.videoSourceLanguage]: sourceLanguageOptions[data.videoSourceLanguage],
+      [data.videoSourceLanguage || '']: sourceLanguageOptions[data.videoSourceLanguage || ''],
     };
     return (
       <Stack gap={1}>
@@ -32,7 +40,7 @@ const Cielo24Form = ({
           <FormDropdown
             value={data.cielo24Turnaround}
             options={turnaroundOptions}
-            handleSelect={(value) => setData({ ...data, cielo24Turnaround: value })}
+            handleSelect={(value) => setData({ ...data, cielo24Turnaround: value as string })}
             placeholderText={intl.formatMessage(messages.cieloTurnaroundPlaceholder)}
           />
         </Form.Group>
@@ -43,7 +51,7 @@ const Cielo24Form = ({
           <FormDropdown
             value={data.cielo24Fidelity}
             options={fidelityOptions}
-            handleSelect={(value) => setData({ ...data, cielo24Fidelity: value, videoSourceLanguage: '' })}
+            handleSelect={(value) => setData({ ...data, cielo24Fidelity: value as string, videoSourceLanguage: '' })}
             placeholderText={intl.formatMessage(messages.cieloFidelityPlaceholder)}
           />
         </Form.Group>
@@ -56,7 +64,8 @@ const Cielo24Form = ({
               <FormDropdown
                 value={data.videoSourceLanguage}
                 options={sourceLanguageOptions}
-                handleSelect={(value) => setData({ ...data, videoSourceLanguage: value, preferredLanguages: [] })}
+                handleSelect={(value) =>
+                  setData({ ...data, videoSourceLanguage: value as string, preferredLanguages: [] })}
                 placeholderText={intl.formatMessage(messages.cieloSourceLanguagePlaceholder)}
               />
             </Form.Group>
@@ -71,7 +80,7 @@ const Cielo24Form = ({
               <FormDropdown
                 value={selectedLanguage}
                 options={languages}
-                handleSelect={(value) => setData({ ...data, preferredLanguages: [value] })}
+                handleSelect={(value) => setData({ ...data, preferredLanguages: [value as string] })}
                 placeholderText={intl.formatMessage(messages.cieloTranscriptLanguagePlaceholder)}
               />
             </Form.Group>
@@ -100,23 +109,6 @@ const Cielo24Form = ({
       </Form.Group>
     </Stack>
   );
-};
-
-Cielo24Form.propTypes = {
-  hasTranscriptCredentials: PropTypes.bool.isRequired,
-  data: PropTypes.shape({
-    apiKey: PropTypes.string,
-    apiSecretKey: PropTypes.string,
-    cielo24Turnaround: PropTypes.string,
-    cielo24Fidelity: PropTypes.string,
-    preferredLanguages: PropTypes.arrayOf(PropTypes.string),
-    videoSourceLanguage: PropTypes.string,
-  }).isRequired,
-  setData: PropTypes.func.isRequired,
-  transcriptionPlan: PropTypes.shape({
-    turnaround: PropTypes.shape({}),
-    fidelity: PropTypes.shape({}),
-  }).isRequired,
 };
 
 export default Cielo24Form;

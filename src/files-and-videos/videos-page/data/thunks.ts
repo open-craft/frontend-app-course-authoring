@@ -1,5 +1,8 @@
 /* eslint-disable no-param-reassign */
 import { camelCase, isEmpty } from 'lodash';
+import type { AnyAction } from 'redux';
+import type { ThunkDispatch } from 'redux-thunk';
+import type { MutableRefObject } from 'react';
 import { getConfig, camelCaseObject } from '@edx/frontend-platform';
 import { RequestStatus } from '../../../data/constants';
 import {
@@ -25,6 +28,10 @@ import {
   setTranscriptCredentials,
   setTranscriptPreferences,
   getAllUsagePaths,
+  type UploadData,
+  type UploadingIdsRef,
+  type Video,
+  type TranscriptPreferences,
 } from './api';
 import {
   setVideoIds,
@@ -41,13 +48,31 @@ import {
 import { ServerError } from './errors';
 import { updateFileValues } from './utils';
 
-let controllers = [];
+import type { DeprecatedReduxState } from '../../../store';
 
-const updateVideoUploadStatus = async (courseId, edxVideoId, message, status) => {
+type VideosDispatch = ThunkDispatch<DeprecatedReduxState, undefined, AnyAction>;
+type VideosThunk = (dispatch: VideosDispatch, getState?: () => DeprecatedReduxState) => Promise<void>;
+
+type UploadingRef = MutableRefObject<UploadingIdsRef['current']>;
+
+interface ErrorResponse {
+  response?: { status?: number; data?: { error?: string; }; };
+}
+
+const getErrorResponse = (error: unknown) => (error as ErrorResponse).response;
+
+let controllers: AbortController[] = [];
+
+const updateVideoUploadStatus = async (
+  courseId: string,
+  edxVideoId: string,
+  message: string,
+  status: string,
+): Promise<void> => {
   await sendVideoUploadStatus(courseId, edxVideoId, message, status);
 };
 
-export function cancelAllUploads(courseId, uploadData) {
+export function cancelAllUploads(courseId: string, uploadData: Record<string, UploadData>): VideosThunk {
   return async (dispatch) => {
     if (controllers) {
       controllers.forEach(control => {
@@ -76,7 +101,7 @@ export function cancelAllUploads(courseId, uploadData) {
   };
 }
 
-export function fetchVideos(courseId) {
+export function fetchVideos(courseId: string): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateLoadingStatus({ courseId, status: RequestStatus.IN_PROGRESS }),
@@ -111,7 +136,7 @@ export function fetchVideos(courseId) {
         );
       }
     } catch (error) {
-      if (error.response && error.response.status === 403) {
+      if (getErrorResponse(error)?.status === 403) {
         dispatch(updateLoadingStatus({ status: RequestStatus.DENIED }));
       } else {
         dispatch(
@@ -125,13 +150,13 @@ export function fetchVideos(courseId) {
   };
 }
 
-export function resetErrors({ errorType }) {
-  return (dispatch) => {
+export function resetErrors({ errorType }: { errorType: keyof import('./slice').VideoErrors; }): VideosThunk {
+  return ((dispatch) => {
     dispatch(clearErrors({ error: errorType }));
-  };
+  }) as VideosThunk; // Preserve this legacy synchronous thunk's return value.
 }
 
-export function updateVideoOrder(courseId, videoIds) {
+export function updateVideoOrder(courseId: string, videoIds: string[]): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateLoadingStatus({ courseId, status: RequestStatus.IN_PROGRESS }),
@@ -143,7 +168,7 @@ export function updateVideoOrder(courseId, videoIds) {
   };
 }
 
-export function deleteVideoFile(courseId, id) {
+export function deleteVideoFile(courseId: string, id: string): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({
@@ -175,8 +200,10 @@ export function deleteVideoFile(courseId, id) {
   };
 }
 
-export function markVideoUploadsInProgressAsFailed({ uploadingIdsRef, courseId }) {
-  return (dispatch) => {
+export function markVideoUploadsInProgressAsFailed(
+  { uploadingIdsRef, courseId }: { uploadingIdsRef: UploadingRef; courseId: string; },
+): VideosThunk {
+  return ((dispatch) => {
     Object.keys(uploadingIdsRef.current.uploadData).forEach((edxVideoId) => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -192,10 +219,14 @@ export function markVideoUploadsInProgressAsFailed({ uploadingIdsRef, courseId }
       }
       dispatch(updateEditStatus({ editType: 'add', status: '' }));
     });
-  };
+  }) as VideosThunk;
 }
 
-const addVideoToEdxVal = async (courseId, file, dispatch) => {
+const addVideoToEdxVal = async (
+  courseId: string,
+  file: File,
+  dispatch: VideosDispatch,
+): Promise<{ uploadUrl?: string; edxVideoId?: string; }> => {
   const currentController = new AbortController();
   controllers.push(currentController);
   try {
@@ -222,7 +253,14 @@ const uploadToBucket = async ({
   uploadingIdsRef,
   edxVideoId,
   dispatch,
-}) => {
+}: {
+  courseId: string;
+  uploadUrl: string;
+  file: File;
+  uploadingIdsRef: UploadingRef;
+  edxVideoId: string;
+  dispatch: VideosDispatch;
+}): Promise<boolean> => {
   const currentController = new AbortController();
   controllers.push(currentController);
   const currentVideoData = uploadingIdsRef.current.uploadData[edxVideoId];
@@ -257,8 +295,8 @@ const uploadToBucket = async ({
     }
     return false;
   } catch (error) {
-    if (error.response && error.response.status === 413) {
-      const message = error.response.data.error;
+    if (getErrorResponse(error)?.status === 413) {
+      const message = getErrorResponse(error)?.data?.error as string;
       dispatch(updateErrors({ error: 'add', message }));
     } else {
       dispatch(
@@ -288,7 +326,13 @@ export const newUploadData = ({
   currentData,
   key,
   originalValue,
-}) => {
+}: {
+  status: string;
+  edxVideoId?: string;
+  currentData: Record<string, UploadData>;
+  key: string;
+  originalValue: UploadData;
+}): Record<string, UploadData> => {
   const newData = currentData;
   if (edxVideoId && edxVideoId !== key) {
     newData[edxVideoId] = { ...originalValue, status };
@@ -301,11 +345,11 @@ export const newUploadData = ({
 };
 
 export function addVideoFile(
-  courseId,
-  files,
-  videoIds,
-  uploadingIdsRef,
-) {
+  courseId: string,
+  files: File[],
+  videoIds: string[],
+  uploadingIdsRef: UploadingRef,
+): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({ editType: 'add', status: RequestStatus.IN_PROGRESS }),
@@ -364,7 +408,7 @@ export function addVideoFile(
         updateEditStatus({ editType: 'add', status: RequestStatus.FAILED }),
       );
       // eslint-disable-next-line
-      console.error(`fetchVideoList failed with message: ${error.message}`);
+      console.error(`fetchVideoList failed with message: ${(error as { message?: unknown; }).message}`);
       hasFailure = true;
       dispatch(
         updateErrors({ error: 'add', message: 'Failed to load videos' }),
@@ -384,7 +428,9 @@ export function addVideoFile(
   };
 }
 
-export function addVideoThumbnail({ file, videoId, courseId }) {
+export function addVideoThumbnail(
+  { file, videoId, courseId }: { file: File; videoId: string; courseId: string; },
+): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({
@@ -392,7 +438,7 @@ export function addVideoThumbnail({ file, videoId, courseId }) {
         status: RequestStatus.IN_PROGRESS,
       }),
     );
-    dispatch(resetErrors({ errorType: 'thumbnail' }));
+    void dispatch(resetErrors({ errorType: 'thumbnail' }));
     try {
       const { imageUrl } = await addThumbnail({ courseId, videoId, file });
       let thumbnail = imageUrl;
@@ -415,8 +461,9 @@ export function addVideoThumbnail({ file, videoId, courseId }) {
         }),
       );
     } catch (error) {
-      if (error.response?.data?.error) {
-        const message = error.response.data.error;
+      const response = getErrorResponse(error);
+      if (response?.data?.error) {
+        const message = response.data.error;
         dispatch(updateErrors({ error: 'thumbnail', message }));
       } else {
         dispatch(
@@ -441,7 +488,7 @@ export function deleteVideoTranscript({
   videoId,
   transcripts,
   apiUrl,
-}) {
+}: { language: string; videoId: string; transcripts: string[]; apiUrl: string; }): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({
@@ -500,7 +547,7 @@ export function downloadVideoTranscript({
   videoId,
   filename,
   apiUrl,
-}) {
+}: { language: string; videoId: string; filename: string; apiUrl: string; }): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({
@@ -546,7 +593,14 @@ export function uploadVideoTranscript({
   file,
   apiUrl,
   transcripts,
-}) {
+}: {
+  language: string;
+  newLanguage?: string;
+  videoId: string;
+  file?: File;
+  apiUrl: string;
+  transcripts: string[];
+}): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({
@@ -561,17 +615,17 @@ export function uploadVideoTranscript({
         videoId,
         language,
         apiUrl,
-        file,
-        newLanguage,
+        file: file!,
+        newLanguage: newLanguage!,
       });
       let updatedTranscripts = transcripts;
       if (isReplacement) {
         const removeTranscript = transcripts.filter(
           (transcript) => transcript !== language,
         );
-        updatedTranscripts = [...removeTranscript, newLanguage];
+        updatedTranscripts = [...removeTranscript, newLanguage!];
       } else {
-        updatedTranscripts = [...transcripts, newLanguage];
+        updatedTranscripts = [...transcripts, newLanguage!];
       }
 
       const transcriptStatus = updatedTranscripts?.length > 0 ? 'transcribed' : 'notTranscribed';
@@ -594,8 +648,9 @@ export function uploadVideoTranscript({
         }),
       );
     } catch (error) {
-      if (error.response?.data?.error) {
-        const message = error.response.data.error;
+      const response = getErrorResponse(error);
+      if (response?.data?.error) {
+        const message = response.data.error;
         dispatch(updateErrors({ error: 'transcript', message }));
       } else {
         const message = isReplacement
@@ -613,7 +668,7 @@ export function uploadVideoTranscript({
   };
 }
 
-export function getUsagePaths({ video, courseId }) {
+export function getUsagePaths({ video, courseId }: { video: Video; courseId: string; }): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({
@@ -662,7 +717,9 @@ export function getUsagePaths({ video, courseId }) {
   };
 }
 
-export function fetchVideoDownload({ selectedRows, courseId }) {
+export function fetchVideoDownload(
+  { selectedRows, courseId }: { selectedRows: import('./api').DownloadRow[]; courseId: string; },
+): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({
@@ -706,7 +763,7 @@ export function fetchVideoDownload({ selectedRows, courseId }) {
   };
 }
 
-export function clearAutomatedTranscript({ courseId }) {
+export function clearAutomatedTranscript({ courseId }: { courseId: string; }): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({
@@ -741,7 +798,9 @@ export function clearAutomatedTranscript({ courseId }) {
   };
 }
 
-export function updateTranscriptCredentials({ courseId, data }) {
+export function updateTranscriptCredentials(
+  { courseId, data }: { courseId: string; data: import('./api').TranscriptCredentials; },
+): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({
@@ -780,7 +839,9 @@ export function updateTranscriptCredentials({ courseId, data }) {
   };
 }
 
-export function updateTranscriptPreference({ courseId, data }) {
+export function updateTranscriptPreference(
+  { courseId, data }: { courseId: string; data: TranscriptPreferences; },
+): VideosThunk {
   return async (dispatch) => {
     dispatch(
       updateEditStatus({
@@ -799,8 +860,9 @@ export function updateTranscriptPreference({ courseId, data }) {
         }),
       );
     } catch (error) {
-      if (error.response?.data?.error) {
-        const message = error.response.data.error;
+      const response = getErrorResponse(error);
+      if (response?.data?.error) {
+        const message = response.data.error;
         dispatch(updateErrors({ error: 'transcript', message }));
       } else {
         dispatch(

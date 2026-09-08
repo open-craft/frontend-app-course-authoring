@@ -117,9 +117,9 @@ describe('api.js', () => {
   describe('uploadVideo', () => {
     it('PUTs to the provided URL', async () => {
       const mockUrl = 'mock.com';
-      const mockFile = { mock: 'file' };
+      const mockFile = { mock: 'file' } as unknown as File;
       const mockVideoId = 'id123';
-      const mockController = {};
+      const mockController = {} as AbortController;
       const mockRef = {
         current: {
           uploadData: {
