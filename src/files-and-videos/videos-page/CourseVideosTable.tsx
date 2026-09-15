@@ -1,10 +1,7 @@
+import React, { useEffect, useState } from 'react';
 import { useIntl } from '@edx/frontend-platform/i18n';
-import {
-  ActionRow,
-  Button,
-  CheckboxFilter,
-  useToggle,
-} from '@openedx/paragon';
+import { ActionRow, Button, CheckboxFilter, useToggle } from '@openedx/paragon';
+import { useMutation } from '@tanstack/react-query';
 import { AgreementGated } from '@src/constants';
 import { RequestStatus } from '@src/data/constants';
 import {
@@ -16,82 +13,41 @@ import {
 } from '@src/files-and-videos/generic';
 import FILES_AND_UPLOAD_TYPE_FILTERS from '@src/files-and-videos/generic/constants';
 import {
-  addVideoFile,
-  addVideoThumbnail,
-  cancelAllUploads,
-  deleteVideoFile,
-  fetchVideoDownload,
-  getUsagePaths,
-  markVideoUploadsInProgressAsFailed,
-  newUploadData,
-  resetErrors,
-  updateVideoOrder,
-} from '@src/files-and-videos/videos-page/data/thunks';
-import { getFormattedDuration, resampleFile } from '@src/files-and-videos/videos-page/data/utils';
-import VideoInfoModalSidebar from '@src/files-and-videos/videos-page/info-sidebar';
-import InfoTab from '@src/files-and-videos/videos-page/info-sidebar/InfoTab';
-import messages from '@src/files-and-videos/videos-page/messages';
-import TranscriptSettings from '@src/files-and-videos/videos-page/transcript-settings';
-import UploadModal from '@src/files-and-videos/videos-page/upload-modal';
-import VideoThumbnail from '@src/files-and-videos/videos-page/VideoThumbnail';
+  useAddVideoThumbnail,
+  useDeleteVideo,
+  useVideosUsage,
+} from './data/apiHooks';
+import { getDownload, type DownloadRow, type Video } from './data/api';
+import { getFormattedDuration, resampleFile, updateFileValues } from './data/utils';
+import VideoInfoModalSidebar from './info-sidebar';
+import InfoTab from './info-sidebar/InfoTab';
+import messages from './messages';
+import TranscriptSettings from './transcript-settings';
+import UploadModal from './upload-modal';
+import VideoThumbnail from './VideoThumbnail';
 import { GatedComponentWrapper } from '@src/generic/agreement-gated-feature';
-import { useModels } from '@src/generic/model-store';
-import { DeprecatedReduxState } from '@src/store';
-import React, { useEffect, useRef } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { useParams } from 'react-router-dom';
+import { useVideosPageContext } from './VideosPageProvider';
+
+const getErrorResponse = (error: unknown) => (error as { response?: { data?: { error?: string; }; }; }).response;
 
 export const CourseVideosTable = () => {
   const intl = useIntl();
-  const { courseId } = useParams() as { courseId: string; };
-  const dispatch = useDispatch();
-  const [
-    isTranscriptSettingsOpen,
-    openTranscriptSettings,
-    closeTranscriptSettings,
-  ] = useToggle(false);
-  const [
-    isUploadTrackerOpen,
-    openUploadTracker,
-    closeUploadTracker,
-  ] = useToggle(false);
-
   const {
-    videoIds,
-    loadingStatus,
-    transcriptStatus,
-    addingStatus: addVideoStatus,
-    usageStatus: usagePathStatus,
-    errors: errorMessages,
+    courseId,
     pageSettings,
-  } = useSelector((state: DeprecatedReduxState) => state.videos);
-
-  const uploadingIdsRef = useRef({ uploadData: {}, uploadCount: 0 });
-
-  useEffect(() => {
-    window.onbeforeunload = () => {
-      dispatch(markVideoUploadsInProgressAsFailed({ uploadingIdsRef, courseId }));
-      if (addVideoStatus === RequestStatus.IN_PROGRESS) {
-        return '';
-      }
-      return undefined;
-    };
-    switch (addVideoStatus) {
-      case RequestStatus.IN_PROGRESS:
-        openUploadTracker();
-        break;
-      case RequestStatus.SUCCESSFUL:
-        setTimeout(() => closeUploadTracker(), 500);
-        break;
-      case RequestStatus.FAILED:
-        setTimeout(() => closeUploadTracker(), 500);
-        break;
-      default:
-        closeUploadTracker();
-        break;
-    }
-  }, [addVideoStatus]);
-
+    loadingStatus,
+    addingStatus,
+    resetErrors,
+    reportError,
+    setStatus,
+    uploadFiles,
+    cancelUploads,
+    uploadingIdsRef,
+    uploadTrackerOpen,
+    pageQuery,
+  } = useVideosPageContext();
+  const [isTranscriptSettingsOpen, openTranscriptSettings, closeTranscriptSettings] = useToggle(false);
+  const [selectedUsageId, setSelectedUsageId] = React.useState<string | null>(null);
   const {
     isVideoTranscriptEnabled,
     encodingsDownloadUrl,
@@ -99,70 +55,129 @@ export const CourseVideosTable = () => {
     videoSupportedFileFormats,
     videoImageSettings,
   } = pageSettings;
+  const serverVideos = pageSettings.previousUploads || [];
+  const serverVideoIds = serverVideos.map(video => video.edxVideoId);
+  const [localVideoOrder, setLocalVideoOrder] = useState<string[] | null>(null);
+  useEffect(() => {
+    setLocalVideoOrder(current =>
+      current
+        ? [...serverVideoIds.filter(id => !current.includes(id)), ...current.filter(id => serverVideoIds.includes(id))]
+        : serverVideoIds
+    );
+  }, [serverVideoIds.join('|')]);
+  const videoIds = localVideoOrder || serverVideoIds;
+  const rawVideoById = new Map(serverVideos.map(video => [video.edxVideoId, video]));
+  const rawVideos = videoIds
+    .map(id => rawVideoById.get(id))
+    .filter((video): video is NonNullable<typeof video> => Boolean(video));
+  const usageQueries = useVideosUsage(courseId, videoIds);
+  const videos = updateFileValues(rawVideos).map((video) => {
+    const usageQuery = usageQueries[videoIds.indexOf(video.id)];
+    const usageLocations = usageQuery?.data?.usageLocations;
+    return usageLocations
+      ? { ...video, usageLocations, activeStatus: usageLocations.length ? 'active' : 'inactive' }
+      : video;
+  });
+
+  const deleteMutation = useDeleteVideo(courseId);
+  const deleteBatchRef = React.useRef({ pending: 0, failed: false });
+  const thumbnailMutation = useAddVideoThumbnail(courseId);
+  const downloadMutation = useMutation({ mutationFn: (rows: DownloadRow[]) => getDownload(rows, courseId) });
+
+  const handleAddFile = (files: File[]) => {
+    resetErrors({ errorType: 'add' });
+    uploadFiles(files);
+  };
+  const handleDeleteFile = (id: string) => {
+    const batch = deleteBatchRef.current;
+    if (batch.pending === 0) {
+      batch.failed = false;
+      resetErrors({ errorType: 'delete' });
+    }
+    batch.pending += 1;
+    setStatus('delete', RequestStatus.IN_PROGRESS);
+    void deleteMutation.mutateAsync(id).catch(() => {
+      batch.failed = true;
+      reportError('delete', `Failed to delete file id ${id}.`);
+    }).finally(() => {
+      batch.pending -= 1;
+      if (batch.pending === 0) {
+        setStatus('delete', batch.failed ? RequestStatus.FAILED : RequestStatus.SUCCESSFUL);
+      }
+    });
+  };
+  const handleDownloadFile = (selectedRows: DownloadRow[]) => {
+    resetErrors({ errorType: 'download' });
+    setStatus('download', RequestStatus.IN_PROGRESS);
+    downloadMutation.mutate(selectedRows, {
+      onSuccess: (downloadErrors) => {
+        downloadErrors.forEach(error => reportError('download', error));
+        setStatus('download', downloadErrors.length ? RequestStatus.FAILED : RequestStatus.SUCCESSFUL);
+      },
+      onError: () => {
+        reportError('download', 'Failed to download zip file of videos.');
+        setStatus('download', RequestStatus.FAILED);
+      },
+    });
+  };
+  const handleUsagePaths = (video: Video) => {
+    setSelectedUsageId(video.id);
+    const usageQuery = usageQueries[videoIds.indexOf(video.id)];
+    void usageQuery?.refetch();
+  };
+  const handleFileOrder = ({ newFileIdOrder }: { newFileIdOrder: string[]; }) => setLocalVideoOrder(newFileIdOrder);
+  const handleAddThumbnail = (file: File, videoId: string) => {
+    resetErrors({ errorType: 'thumbnail' });
+    setStatus('thumbnail', RequestStatus.IN_PROGRESS);
+    resampleFile({
+      file,
+      videoId,
+      courseId,
+      // resampleFile is shared with the legacy thunk; this callback keeps its image processing local.
+      dispatch: (params) => {
+        thumbnailMutation.mutate(params as { file: File; videoId: string; courseId: string; }, {
+          onSuccess: () => setStatus('thumbnail', RequestStatus.SUCCESSFUL),
+          onError: (error) => {
+            reportError(
+              'thumbnail',
+              getErrorResponse(error)?.data?.error || `Failed to add thumbnail for video id ${videoId}.`,
+            );
+            setStatus('thumbnail', RequestStatus.FAILED);
+          },
+        });
+        return params;
+      },
+      addVideoThumbnail: params => params,
+    });
+  };
+  const selectedUsageIndex = selectedUsageId ? videoIds.indexOf(selectedUsageId) : -1;
+  const selectedUsageQuery = selectedUsageIndex >= 0 ? usageQueries[selectedUsageIndex] : undefined;
+  const usageStatus = selectedUsageQuery?.isPending
+    ? RequestStatus.IN_PROGRESS
+    : selectedUsageQuery?.isError
+    ? RequestStatus.FAILED
+    : RequestStatus.SUCCESSFUL;
+  const usageErrors = selectedUsageQuery?.isError && selectedUsageId
+    ? [`Failed to get usage metrics for ${videos[selectedUsageIndex]?.displayName}.`]
+    : [];
 
   const supportedFileFormats = {
     'video/*': videoSupportedFileFormats || FILES_AND_UPLOAD_TYPE_FILTERS.video,
   };
-  const handleUploadCancel = () => dispatch(cancelAllUploads(courseId, uploadingIdsRef.current.uploadData));
-  const handleErrorReset = (error) => dispatch(resetErrors(error));
-  const handleAddFile = (files) => {
-    handleErrorReset({ errorType: 'add' });
-    uploadingIdsRef.current.uploadCount = files.length;
-
-    files.forEach((file, idx) => {
-      const name = file?.name || `Video ${idx + 1}`;
-      const progress = 0;
-
-      newUploadData({
-        status: RequestStatus.PENDING,
-        currentData: uploadingIdsRef.current.uploadData,
-        originalValue: { name, progress, status: RequestStatus.PENDING },
-        key: `video_${idx}`,
-        edxVideoId: undefined,
-      });
-    });
-    dispatch(addVideoFile(courseId, files, videoIds, uploadingIdsRef));
-  };
-  const handleDeleteFile = (id) => dispatch(deleteVideoFile(courseId, id));
-  const handleDownloadFile = (selectedRows) =>
-    dispatch(fetchVideoDownload({
-      selectedRows,
-      courseId,
-    }));
-  const handleUsagePaths = (video) => dispatch(getUsagePaths({ video, courseId }));
-  const handleFileOrder = ({ newFileIdOrder }) => {
-    dispatch(updateVideoOrder(courseId, newFileIdOrder));
-  };
-  const handleAddThumbnail = (file, videoId) =>
-    resampleFile({
-      file,
-      dispatch,
-      courseId,
-      videoId,
-      addVideoThumbnail,
-    });
-
-  const videos = useModels('videos', videoIds);
-
-  const data = {
-    supportedFileFormats,
-    encodingsDownloadUrl,
-    fileIds: videoIds,
-    loadingStatus,
-    usagePathStatus,
-    usageErrorMessages: errorMessages.usageMetrics,
-    fileType: 'video',
-  };
-  const thumbnailPreview = (props) =>
+  const thumbnailPreview = (props: Parameters<typeof VideoThumbnail>[0]) =>
     VideoThumbnail({
       ...props,
       pageLoadStatus: loadingStatus,
       handleAddThumbnail,
       videoImageSettings,
     });
-  const infoModalSidebar = (video) => <VideoInfoModalSidebar video={video} />;
-  const infoModalContentUnderPreview = (video) => <InfoTab video={video} />;
-  const maxFileSize = videoUploadMaxFileSize * 1073741824;
+  const infoModalSidebar = (video: Video) => (
+    <VideoInfoModalSidebar video={video as unknown as Parameters<typeof VideoInfoModalSidebar>[0]['video']} />
+  );
+  const infoModalContentUnderPreview = (video: Video) => (
+    <InfoTab video={video as unknown as Parameters<typeof InfoTab>[0]['video']} />
+  );
+  const maxFileSize = Number(videoUploadMaxFileSize || 0) * 1073741824;
   const transcriptColumn = {
     id: 'transcriptStatus',
     Header: 'Transcript',
@@ -171,14 +186,8 @@ export const CourseVideosTable = () => {
     Filter: CheckboxFilter,
     filter: 'exactTextCase',
     filterChoices: [
-      {
-        name: intl.formatMessage(messages.transcribedCheckboxLabel),
-        value: 'transcribed',
-      },
-      {
-        name: intl.formatMessage(messages.notTranscribedCheckboxLabel),
-        value: 'notTranscribed',
-      },
+      { name: intl.formatMessage(messages.transcribedCheckboxLabel), value: 'transcribed' },
+      { name: intl.formatMessage(messages.notTranscribedCheckboxLabel), value: 'notTranscribed' },
     ],
   };
   const activeColumn = {
@@ -193,42 +202,23 @@ export const CourseVideosTable = () => {
       { name: intl.formatMessage(messages.inactiveCheckboxLabel), value: 'inactive' },
     ],
   };
-  const durationColumn = {
-    id: 'duration',
-    Header: 'Video length',
-    accessor: 'duration',
-    Cell: ({ row }) => {
-      const { duration } = row.original;
-      return getFormattedDuration(duration);
-    },
-  };
-  const processingStatusColumn = {
-    id: 'status',
-    Header: 'Status',
-    accessor: 'status',
-    Cell: ({ row }) => StatusColumn({ row }),
-    Filter: CheckboxFilter,
-    filterChoices: [
-      { name: intl.formatMessage(messages.processingCheckboxLabel), value: 'Processing' },
-
-      { name: intl.formatMessage(messages.failedCheckboxLabel), value: 'Failed' },
-    ],
-  };
-  const videoThumbnailColumn = {
-    id: 'courseVideoImageUrl',
-    Header: '',
-    Cell: ({ row }) => ThumbnailColumn({ row, thumbnailPreview }),
-  };
   const tableColumns = [
-    { ...videoThumbnailColumn },
+    { id: 'courseVideoImageUrl', Header: '', Cell: ({ row }) => ThumbnailColumn({ row, thumbnailPreview }) },
+    { Header: 'File name', accessor: 'clientVideoId' },
+    { Header: 'Video length', accessor: 'duration', Cell: ({ row }) => getFormattedDuration(row.original.duration) },
+    transcriptColumn,
+    activeColumn,
     {
-      Header: 'File name',
-      accessor: 'clientVideoId',
+      id: 'status',
+      Header: 'Status',
+      accessor: 'status',
+      Cell: ({ row }) => StatusColumn({ row }),
+      Filter: CheckboxFilter,
+      filterChoices: [
+        { name: intl.formatMessage(messages.processingCheckboxLabel), value: 'Processing' },
+        { name: intl.formatMessage(messages.failedCheckboxLabel), value: 'Failed' },
+      ],
     },
-    { ...durationColumn },
-    { ...transcriptColumn },
-    { ...activeColumn },
-    { ...processingStatusColumn },
   ];
 
   return (
@@ -236,64 +226,60 @@ export const CourseVideosTable = () => {
       <>
         <ActionRow>
           <ActionRow.Spacer />
-          {isVideoTranscriptEnabled ?
-            (
-              <Button
-                variant="link"
-                size="sm"
-                onClick={() => {
-                  openTranscriptSettings();
-                  handleErrorReset({ errorType: 'transcript' });
-                }}
-              >
-                {intl.formatMessage(messages.transcriptSettingsButtonLabel)}
-              </Button>
-            ) :
-            null}
+          {isVideoTranscriptEnabled && (
+            <Button
+              variant="link"
+              size="sm"
+              onClick={openTranscriptSettings}
+            >
+              {intl.formatMessage(messages.transcriptSettingsButtonLabel)}
+            </Button>
+          )}
         </ActionRow>
-        {loadingStatus !== RequestStatus.FAILED && (
+        {!pageQuery.isError && (
           <>
             {isVideoTranscriptEnabled && (
               <TranscriptSettings
-                {...{
-                  isTranscriptSettingsOpen,
-                  closeTranscriptSettings,
-                  handleErrorReset,
-                  errorMessages,
-                  transcriptStatus,
-                  courseId,
-                }}
+                isTranscriptSettingsOpen={isTranscriptSettingsOpen}
+                closeTranscriptSettings={closeTranscriptSettings}
+                courseId={courseId}
               />
             )}
             <FileTable
-              {...{
-                courseId,
-                data,
-                handleAddFile,
-                handleDeleteFile,
-                handleDownloadFile,
-                handleUsagePaths,
-                handleErrorReset,
-                handleFileOrder,
-                tableColumns,
-                maxFileSize,
-                thumbnailPreview,
-                infoModalSidebar,
-                infoModalContentUnderPreview,
-                files: videos,
+              courseId={courseId}
+              data={{
+                supportedFileFormats,
+                encodingsDownloadUrl,
+                fileIds: videoIds,
+                loadingStatus,
+                usagePathStatus: usageStatus,
+                usageErrorMessages: usageErrors,
+                fileType: 'video',
               }}
+              handleAddFile={handleAddFile}
+              handleDeleteFile={handleDeleteFile}
+              handleDownloadFile={handleDownloadFile}
+              handleUsagePaths={handleUsagePaths}
+              handleErrorReset={resetErrors}
+              handleFileOrder={handleFileOrder}
+              tableColumns={tableColumns}
+              maxFileSize={maxFileSize}
+              thumbnailPreview={thumbnailPreview}
+              infoModalSidebar={infoModalSidebar}
+              infoModalContentUnderPreview={infoModalContentUnderPreview}
+              files={videos}
             />
           </>
         )}
         <UploadModal
-          {...{
-            isUploadTrackerOpen,
-            currentUploadingIdsRef: uploadingIdsRef.current,
-            handleUploadCancel,
-            addVideoStatus,
-          }}
+          isUploadTrackerOpen={uploadTrackerOpen}
+          currentUploadingIdsRef={uploadingIdsRef.current}
+          handleUploadCancel={cancelUploads}
+          addVideoStatus={addingStatus}
         />
       </>
     </GatedComponentWrapper>
   );
 };
+
+export default CourseVideosTable;

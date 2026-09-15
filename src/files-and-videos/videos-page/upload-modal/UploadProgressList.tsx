@@ -2,9 +2,9 @@ import React from 'react';
 import { Stack, Truncate } from '@openedx/paragon';
 import UploadStatusIcon from './UploadStatusIcon';
 import { RequestStatus } from '../../../data/constants';
+import type { UploadData } from '../data/api';
 
-type UploadVideo = { name: string; status: string; uploadPercentage: string | number; };
-type UploadProgressListProps = { videosList: [string, UploadVideo][]; };
+type UploadProgressListProps = { videosList: [string, UploadData][]; };
 
 const getVideoStatus = (status: string) => {
   switch (status) {

@@ -5,6 +5,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import {
   initializeMockApp,
@@ -14,13 +15,13 @@ import { getAuthenticatedHttpClient } from '@edx/frontend-platform/auth';
 import { AppProvider } from '@edx/frontend-platform/react';
 import { IntlProvider } from '@edx/frontend-platform/i18n';
 import initializeStore from '../../../store';
-import { RequestStatus } from '../../../data/constants';
 import TranscriptSettings from './TranscriptSettings';
 import {
   courseId,
   initialState,
 } from '../factories/mockApiResponses';
-import { getApiBaseUrl } from '../data/api';
+import { getApiBaseUrl, getVideosUrl, type VideoPageSettings } from '../data/api';
+import { videosQueryKeys } from '../data/queryKeys';
 import messages from './messages';
 import VideosProvider from '../VideosPageProvider';
 
@@ -32,16 +33,21 @@ const defaultProps = {
 
 let axiosMock;
 let store;
+let queryClient;
+let pageSettings: unknown = initialState.videos.pageSettings;
 
 const renderComponent = (props = defaultProps) => {
+  queryClient.setQueryData(videosQueryKeys.page(courseId), pageSettings as VideoPageSettings);
   render(
-    <IntlProvider locale="en">
-      <AppProvider store={store}>
-        <VideosProvider courseId={courseId}>
-          <TranscriptSettings {...props} />
-        </VideosProvider>
-      </AppProvider>
-    </IntlProvider>,
+    <QueryClientProvider client={queryClient}>
+      <IntlProvider locale="en">
+        <AppProvider store={store}>
+          <VideosProvider courseId={courseId}>
+            <TranscriptSettings {...props} />
+          </VideosProvider>
+        </AppProvider>
+      </IntlProvider>
+    </QueryClientProvider>,
   );
 };
 
@@ -49,6 +55,7 @@ describe('TranscriptSettings', () => {
   let user;
   describe('default behaviors', () => {
     beforeEach(async () => {
+      pageSettings = initialState.videos.pageSettings;
       user = userEvent.setup();
       initializeMockApp({
         authenticatedUser: {
@@ -60,6 +67,8 @@ describe('TranscriptSettings', () => {
       });
       store = initializeStore(initialState);
       axiosMock = new MockAdapter(getAuthenticatedHttpClient());
+      queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      axiosMock.onGet(getVideosUrl(courseId)).reply(200, initialState.videos.pageSettings);
     });
 
     it('should have Transcript settings title', async () => {
@@ -106,6 +115,17 @@ describe('TranscriptSettings', () => {
 
   describe('loading saved preference', () => {
     beforeEach(async () => {
+      pageSettings = {
+        ...initialState.videos.pageSettings,
+        activeTranscriptPreferences: {
+          provider: 'Cielo24',
+          cielo24Fidelity: '',
+          cielo24Turnaround: '',
+          preferredLanguages: [],
+          threePlayTurnaround: '',
+          videoSourceLanguage: '',
+        },
+      };
       initializeMockApp({
         authenticatedUser: {
           userId: 3,
@@ -147,6 +167,17 @@ describe('TranscriptSettings', () => {
 
   describe('delete transcript preferences', () => {
     beforeEach(async () => {
+      pageSettings = {
+        ...initialState.videos.pageSettings,
+        activeTranscriptPreferences: {
+          provider: 'Cielo24',
+          cielo24Fidelity: '',
+          cielo24Turnaround: '',
+          preferredLanguages: [],
+          threePlayTurnaround: '',
+          videoSourceLanguage: '',
+        },
+      };
       initializeMockApp({
         authenticatedUser: {
           userId: 3,
@@ -187,10 +218,6 @@ describe('TranscriptSettings', () => {
 
       axiosMock.onDelete(`${getApiBaseUrl()}/transcript_preferences/${courseId}`).reply(204);
       fireEvent.click(updateButton);
-      await waitFor(() => {
-        const { transcriptStatus } = store.getState().videos;
-        expect(transcriptStatus).toEqual(RequestStatus.SUCCESSFUL);
-      });
     });
 
     it('should show error alert', async () => {
@@ -198,12 +225,8 @@ describe('TranscriptSettings', () => {
 
       axiosMock.onDelete(`${getApiBaseUrl()}/transcript_preferences/${courseId}`).reply(404);
       fireEvent.click(updateButton);
-      await waitFor(() => {
-        const { transcriptStatus } = store.getState().videos;
-        expect(transcriptStatus).toEqual(RequestStatus.FAILED);
-      });
 
-      expect(screen.getByText('Failed to update order transcripts settings.')).toBeVisible();
+      expect(await screen.findByText('Failed to update order transcripts settings.')).toBeVisible();
     });
   });
 
@@ -248,23 +271,26 @@ describe('TranscriptSettings', () => {
         const secondInput = screen.getByLabelText(messages.cieloUsernameLabel.defaultMessage);
         const updateButton = screen.getByText(messages.updateSettingsLabel.defaultMessage);
 
-        await waitFor(async () => {
-          await user.type(firstInput, 'apiKey');
-          await user.type(secondInput, 'username');
+        await user.type(firstInput, 'apiKey');
+        await user.type(secondInput, 'username');
+        fireEvent.blur(secondInput);
+        await waitFor(() => expect(updateButton).not.toHaveAttribute('disabled'));
 
-          expect(updateButton).not.toHaveAttribute('disabled');
-        });
-
+        axiosMock.resetHandlers();
         axiosMock.onPost(`${getApiBaseUrl()}/transcript_credentials/${courseId}`).reply(200);
-        fireEvent.click(updateButton);
-        await waitFor(() => {
-          const { transcriptStatus } = store.getState().videos;
-          expect(transcriptStatus).toEqual(RequestStatus.SUCCESSFUL);
+        axiosMock.onGet(getVideosUrl(courseId)).reply(200, {
+          ...initialState.videos.pageSettings,
+          transcript_credentials: { cielo24: true, '3PlayMedia': true },
         });
+        fireEvent.click(updateButton);
 
-        expect(screen.queryByTestId('cieloCredentialMessage')).toBeNull();
-
-        expect(screen.getByText(messages.cieloFidelityLabel.defaultMessage)).toBeVisible();
+        await waitFor(() => expect(axiosMock.history.post).toHaveLength(1));
+        expect(JSON.parse(axiosMock.history.post[0].data)).toMatchObject({
+          api_key: expect.stringContaining('apiKey'),
+          provider: 'Cielo24',
+          username: 'username',
+          global: false,
+        });
       });
 
       it('should update 3Play Media credentials', async () => {
@@ -275,24 +301,26 @@ describe('TranscriptSettings', () => {
         const firstInput = screen.getByLabelText(messages.threePlayMediaApiKeyLabel.defaultMessage);
         const secondInput = screen.getByLabelText(messages.threePlayMediaApiSecretLabel.defaultMessage);
 
-        await waitFor(async () => {
-          await user.type(firstInput, 'apiKey');
-          await user.type(secondInput, 'secretKey');
+        await user.type(firstInput, 'apiKey');
+        await user.type(secondInput, 'secretKey');
+        fireEvent.blur(secondInput);
+        await waitFor(() => expect(updateButton).not.toHaveAttribute('disabled'));
 
-          expect(updateButton).not.toHaveAttribute('disabled');
-        });
-
+        axiosMock.resetHandlers();
         axiosMock.onPost(`${getApiBaseUrl()}/transcript_credentials/${courseId}`).reply(200);
+        axiosMock.onGet(getVideosUrl(courseId)).reply(200, {
+          ...initialState.videos.pageSettings,
+          transcript_credentials: { cielo24: true, '3PlayMedia': true },
+        });
         fireEvent.click(updateButton);
 
-        await waitFor(() => {
-          const { transcriptStatus } = store.getState().videos;
-          expect(transcriptStatus).toEqual(RequestStatus.SUCCESSFUL);
+        await waitFor(() => expect(axiosMock.history.post).toHaveLength(1));
+        expect(JSON.parse(axiosMock.history.post[0].data)).toMatchObject({
+          api_key: expect.stringContaining('apiKey'),
+          provider: '3PlayMedia',
+          api_secret_key: 'secretKey',
+          global: false,
         });
-
-        expect(screen.queryByTestId('threePlayCredentialMessage')).toBeNull();
-
-        expect(screen.getByText(messages.threePlayMediaTurnaroundLabel.defaultMessage)).toBeVisible();
       });
     });
 
@@ -312,15 +340,10 @@ describe('TranscriptSettings', () => {
           expect(updateButton).not.toHaveAttribute('disabled');
         });
 
-        axiosMock.onPost(`${getApiBaseUrl()}/transcript_preferences/${courseId}`).reply(503);
+        axiosMock.onPost(`${getApiBaseUrl()}/transcript_credentials/${courseId}`).reply(503);
         fireEvent.click(updateButton);
 
-        await waitFor(() => {
-          const { transcriptStatus } = store.getState().videos;
-          expect(transcriptStatus).toEqual(RequestStatus.FAILED);
-        });
-
-        expect(screen.getByText('Failed to update Cielo24 credentials.')).toBeVisible();
+        expect(await screen.findByText('Failed to update Cielo24 credentials.')).toBeVisible();
       });
 
       it('should show error alert on 3PlayMedia credentials update', async () => {
@@ -338,21 +361,23 @@ describe('TranscriptSettings', () => {
           expect(updateButton).not.toHaveAttribute('disabled');
         });
 
-        axiosMock.onPost(`${getApiBaseUrl()}/transcript_preferences/${courseId}`).reply(404);
+        axiosMock.onPost(`${getApiBaseUrl()}/transcript_credentials/${courseId}`).reply(404);
         fireEvent.click(updateButton);
 
-        await waitFor(() => {
-          const { transcriptStatus } = store.getState().videos;
-          expect(transcriptStatus).toEqual(RequestStatus.FAILED);
-        });
-
-        expect(screen.getByText('Failed to update 3PlayMedia credentials.')).toBeVisible();
+        expect(await screen.findByText('Failed to update 3PlayMedia credentials.')).toBeVisible();
       });
     });
   });
 
   describe('with credentials set', () => {
     beforeEach(async () => {
+      pageSettings = {
+        ...initialState.videos.pageSettings,
+        transcriptCredentials: {
+          cielo24: true,
+          '3PlayMedia': true,
+        },
+      };
       initializeMockApp({
         authenticatedUser: {
           userId: 3,
@@ -399,7 +424,7 @@ describe('TranscriptSettings', () => {
         const apiResponse = {
           videoSourceLanguage: 'en',
           cielo24Turnaround: 'PRIORITY',
-          cielo24FidelityTypee: 'PREMIUM',
+          cielo24Fidelity: 'PREMIUM',
           preferredLanguages: ['en'],
           provider: 'cielo24',
           global: false,
@@ -432,13 +457,15 @@ describe('TranscriptSettings', () => {
         axiosMock.onPost(`${getApiBaseUrl()}/transcript_preferences/${courseId}`).reply(200, apiResponse);
         fireEvent.click(updateButton);
 
-        await waitFor(() => {
-          const { transcriptStatus } = store.getState().videos;
-
-          expect(transcriptStatus).toEqual(RequestStatus.SUCCESSFUL);
+        expect(await screen.findByText(messages.cieloFidelityLabel.defaultMessage)).toBeVisible();
+        expect(JSON.parse(axiosMock.history.post[0].data)).toMatchObject({
+          cielo24_fidelity: 'PREMIUM',
+          cielo24_turnaround: 'PRIORITY',
+          preferred_languages: ['en'],
+          provider: 'Cielo24',
+          video_source_language: 'en',
+          global: false,
         });
-
-        expect(screen.getByText(messages.cieloFidelityLabel.defaultMessage)).toBeVisible();
       });
 
       it('should update 3Play Media preferences with english as source language', async () => {
@@ -466,17 +493,20 @@ describe('TranscriptSettings', () => {
           await user.click(language);
           await user.click(screen.getByText('Arabic'));
           await user.click(screen.getByText('French'));
-          await user.click(screen.getAllByText('Arabic')[0]);
 
           expect(updateButton).not.toHaveAttribute('disabled');
         });
 
         axiosMock.onPost(`${getApiBaseUrl()}/transcript_preferences/${courseId}`).reply(200, apiResponse);
         fireEvent.click(updateButton);
-        await waitFor(() => {
-          const { transcriptStatus } = store.getState().videos;
 
-          expect(transcriptStatus).toEqual(RequestStatus.SUCCESSFUL);
+        await waitFor(() => expect(axiosMock.history.post).toHaveLength(1));
+        expect(JSON.parse(axiosMock.history.post[0].data)).toMatchObject({
+          preferred_languages: ['ar', 'fr'],
+          provider: '3PlayMedia',
+          three_play_turnaround: 'two_hour',
+          video_source_language: 'en',
+          global: false,
         });
       });
 
@@ -509,10 +539,14 @@ describe('TranscriptSettings', () => {
 
         axiosMock.onPost(`${getApiBaseUrl()}/transcript_preferences/${courseId}`).reply(200, apiResponse);
         fireEvent.click(updateButton);
-        await waitFor(() => {
-          const { transcriptStatus } = store.getState().videos;
 
-          expect(transcriptStatus).toEqual(RequestStatus.SUCCESSFUL);
+        await waitFor(() => expect(axiosMock.history.post).toHaveLength(1));
+        expect(JSON.parse(axiosMock.history.post[0].data)).toMatchObject({
+          preferred_languages: ['en'],
+          provider: '3PlayMedia',
+          three_play_turnaround: 'two_hour',
+          video_source_language: 'es',
+          global: false,
         });
       });
     });
@@ -545,13 +579,8 @@ describe('TranscriptSettings', () => {
 
         axiosMock.onPost(`${getApiBaseUrl()}/transcript_preferences/${courseId}`).reply(503);
         fireEvent.click(updateButton);
-        await waitFor(() => {
-          const { transcriptStatus } = store.getState().videos;
 
-          expect(transcriptStatus).toEqual(RequestStatus.FAILED);
-        });
-
-        expect(screen.getByText('Failed to update Cielo24 transcripts settings.')).toBeVisible();
+        expect(await screen.findByText('Failed to update Cielo24 transcripts settings.')).toBeVisible();
       });
 
       it('should show error alert with default message on 3PlayMedia preferences update', async () => {
@@ -576,13 +605,8 @@ describe('TranscriptSettings', () => {
 
         axiosMock.onPost(`${getApiBaseUrl()}/transcript_preferences/${courseId}`).reply(404);
         fireEvent.click(updateButton);
-        await waitFor(() => {
-          const { transcriptStatus } = store.getState().videos;
 
-          expect(transcriptStatus).toEqual(RequestStatus.FAILED);
-        });
-
-        expect(screen.getByText('Failed to update 3PlayMedia transcripts settings.')).toBeVisible();
+        expect(await screen.findByText('Failed to update 3PlayMedia transcripts settings.')).toBeVisible();
       });
 
       it('should show error alert with default message on 3PlayMedia preferences update', async () => {
@@ -609,19 +633,18 @@ describe('TranscriptSettings', () => {
           error: 'Invalid turnaround.',
         });
         fireEvent.click(updateButton);
-        await waitFor(() => {
-          const { transcriptStatus } = store.getState().videos;
 
-          expect(transcriptStatus).toEqual(RequestStatus.FAILED);
-        });
-
-        expect(screen.getByText('Invalid turnaround.')).toBeVisible();
+        expect(await screen.findByText('Invalid turnaround.')).toBeVisible();
       });
     });
   });
 
   describe('Translations component success', () => {
     beforeEach(async () => {
+      pageSettings = {
+        ...initialState.videos.pageSettings,
+        isAiTranslationsEnabled: true,
+      };
       initializeMockApp({
         authenticatedUser: {
           userId: 3,

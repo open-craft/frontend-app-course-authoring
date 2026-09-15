@@ -4,9 +4,6 @@ import React, {
   useState,
   useRef,
 } from 'react';
-import type { VideosState } from '../data/slice';
-import { useDispatch, useSelector } from 'react-redux';
-import { isEmpty } from 'lodash';
 import {
   Button,
   Icon,
@@ -17,7 +14,6 @@ import {
 } from '@openedx/paragon';
 import {
   Add,
-  CheckCircle,
   Delete,
   Error as ErrorIcon,
   FileUpload,
@@ -30,13 +26,10 @@ import { getLanguages, getSortedTranscripts } from '../data/utils';
 import Transcript from './transcript-item';
 import LanguageSelect from './transcript-item/LanguageSelect';
 import { FileInput, useFileInput } from '../../generic';
-import {
-  deleteVideoTranscript,
-  downloadVideoTranscript,
-  resetErrors,
-  uploadVideoTranscript,
-} from '../data/thunks';
-import { RequestStatus } from '../../../data/constants';
+import { downloadTranscript } from '../data/api';
+import { useDeleteTranscript, useUploadTranscript } from '../data/apiHooks';
+import { useVideosPageContext } from '../VideosPageProvider';
+import { RequestStatus, type RequestStatusType } from '../../../data/constants';
 import messages from './messages';
 import { isValidSrt } from '../transcript-editor/srtUtils';
 
@@ -44,37 +37,35 @@ type TranscriptVideo = { transcripts: string[]; id: string; displayName: string;
 type TranscriptData = { language: string; newLanguage?: string; file?: File; };
 type TranscriptTabProps = { video: TranscriptVideo; };
 
-type TranscriptState = VideosState;
-
 const TranscriptTab = ({ video }: TranscriptTabProps) => {
   const intl = useIntl();
-  const dispatch = useDispatch();
   const divRef = useRef<HTMLDivElement>(null);
-  const { transcriptStatus, errors } = useSelector(
-    (state: { videos: VideosState; }) => state.videos,
-  );
+  const { courseId, pageSettings } = useVideosPageContext();
   const {
-    transcriptAvailableLanguages,
-    videoTranscriptSettings,
-  } = useSelector(state => state.videos.pageSettings);
+    transcriptAvailableLanguages = [],
+    videoTranscriptSettings = {} as NonNullable<typeof pageSettings.videoTranscriptSettings>,
+  } = pageSettings;
   const {
     transcriptDeleteHandlerUrl,
     transcriptUploadHandlerUrl,
     transcriptDownloadHandlerUrl,
   } = videoTranscriptSettings;
-  const { transcripts, id, displayName } = video;
+  const { transcripts = [], id, displayName } = video;
+  const deleteMutation = useDeleteTranscript(courseId);
+  const uploadMutation = useUploadTranscript(courseId);
+  const [transcriptStatus, setTranscriptStatus] = useState<RequestStatusType | ''>('');
+  const [transcriptErrors, setTranscriptErrors] = useState<string[]>([]);
   const languages = useMemo<Record<string, string>>(
     () => getLanguages(transcriptAvailableLanguages),
     [transcriptAvailableLanguages],
   );
-  let sortedTranscripts = getSortedTranscripts(languages, transcripts);
+  const sortedTranscripts = getSortedTranscripts(languages, transcripts);
   const [previousSelection, setPreviousSelection] = useState<string[]>(sortedTranscripts);
   const [isAddingTranscript, setIsAddingTranscript] = useState(false);
   const [newLanguage, setNewLanguage] = useState('');
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pendingFileName, setPendingFileName] = useState('');
   const [isSubmittingNewTranscript, setIsSubmittingNewTranscript] = useState(false);
-  const [isSubmittingReplace, setIsSubmittingReplace] = useState(false);
   const [showAddTranscriptError, setShowAddTranscriptError] = useState(false);
   const [showAddedToast, setShowAddedToast] = useState(false);
   const [invalidSrtFile, setInvalidSrtFile] = useState(false);
@@ -87,7 +78,8 @@ const TranscriptTab = ({ video }: TranscriptTabProps) => {
       }
       const reader = new FileReader();
       reader.onload = (e) => {
-        if (!isValidSrt(e.target.result)) {
+        const result = e.target?.result;
+        if (typeof result !== 'string' || !isValidSrt(result)) {
           setInvalidSrtFile(true);
           setSelectedFile(null);
         } else {
@@ -103,10 +95,9 @@ const TranscriptTab = ({ video }: TranscriptTabProps) => {
   });
 
   useEffect(() => {
-    dispatch(resetErrors({ errorType: 'transcript' }));
-    sortedTranscripts = getSortedTranscripts(languages, transcripts);
-    setPreviousSelection(sortedTranscripts);
-  }, [transcripts]);
+    setTranscriptErrors([]);
+    setPreviousSelection(getSortedTranscripts(languages, transcripts));
+  }, [languages, transcripts.join('|')]);
 
   useEffect(() => {
     if (isAddingTranscript) {
@@ -116,85 +107,96 @@ const TranscriptTab = ({ video }: TranscriptTabProps) => {
     }
   }, [isAddingTranscript]);
 
-  useEffect(() => {
-    if (!isAddingTranscript || !isSubmittingNewTranscript) {
-      return;
-    }
-
-    if (transcriptStatus === RequestStatus.SUCCESSFUL) {
-      setIsSubmittingNewTranscript(false);
-      setPendingFileName('');
-      setIsAddingTranscript(false);
-      setSelectedFile(null);
-      setShowAddTranscriptError(false);
-      setShowAddedToast(true);
-    }
-
-    if (transcriptStatus === RequestStatus.FAILED) {
-      setIsSubmittingNewTranscript(false);
-      setPendingFileName('');
-      setSelectedFile(null);
-      setShowAddTranscriptError(true);
-    }
-  }, [isAddingTranscript, isSubmittingNewTranscript, transcriptStatus]);
-
-  useEffect(() => {
-    if (!isSubmittingReplace) {
-      return;
-    }
-    if (transcriptStatus === RequestStatus.SUCCESSFUL) {
-      setIsSubmittingReplace(false);
-      setShowAddedToast(true);
-    }
-    if (transcriptStatus === RequestStatus.FAILED) {
-      setIsSubmittingReplace(false);
-    }
-  }, [isSubmittingReplace, transcriptStatus]);
-
   const handleTranscript = (data: TranscriptData, actionType: 'delete' | 'download' | 'upload') => {
     const {
       language,
       newLanguage: transcriptNewLanguage,
       file,
     } = data;
-    dispatch(resetErrors({ errorType: 'transcript' }));
+    setTranscriptErrors([]);
+    setTranscriptStatus(RequestStatus.IN_PROGRESS);
     switch (actionType) {
       case 'delete':
         /* istanbul ignore if -- legacy empty-row path; the add form no longer creates empty rows */
-        if (isEmpty(language)) {
-          const updatedSelection = previousSelection;
-          updatedSelection.shift();
-          setPreviousSelection(updatedSelection);
+        if (!language) {
+          setPreviousSelection(current => current.filter(Boolean));
+          setTranscriptStatus(RequestStatus.SUCCESSFUL);
         } else {
-          dispatch(deleteVideoTranscript({
-            language,
-            videoId: id,
-            apiUrl: transcriptDeleteHandlerUrl,
-            transcripts,
-          }));
+          deleteMutation.mutate({ language, videoId: id, apiUrl: transcriptDeleteHandlerUrl }, {
+            onSuccess: () => {
+              setPreviousSelection(current => current.filter(transcript => transcript !== language));
+              setTranscriptStatus(RequestStatus.SUCCESSFUL);
+            },
+            onError: () => {
+              setTranscriptErrors([`Failed to delete ${language} transcript.`]);
+              setTranscriptStatus(RequestStatus.FAILED);
+            },
+          });
         }
         break;
-      case 'download':
-        dispatch(downloadVideoTranscript({
-          filename: `${displayName}-${language}.srt`,
+      case 'download': {
+        const filename = `${displayName}-${language}.srt`;
+        void downloadTranscript({
+          filename,
           language,
           videoId: id,
           apiUrl: transcriptDownloadHandlerUrl,
-        }));
+        }).then(
+          () => setTranscriptStatus(RequestStatus.SUCCESSFUL),
+          () => {
+            setTranscriptErrors([`Failed to download ${filename}.`]);
+            setTranscriptStatus(RequestStatus.FAILED);
+          },
+        );
         break;
-      case 'upload':
-        if (!isEmpty(language)) {
-          setIsSubmittingReplace(true);
-        }
-        dispatch(uploadVideoTranscript({
+      }
+      case 'upload': {
+        const isReplacement = Boolean(language);
+        uploadMutation.mutate({
           language,
           videoId: id,
           apiUrl: transcriptUploadHandlerUrl,
-          newLanguage: transcriptNewLanguage,
-          file,
-          transcripts,
-        }));
+          newLanguage: transcriptNewLanguage || '',
+          file: file!,
+        }, {
+          onSuccess: () => {
+            setTranscriptStatus(RequestStatus.SUCCESSFUL);
+            setPreviousSelection(current =>
+              getSortedTranscripts(
+                languages,
+                isReplacement
+                  ? [...current.filter(transcript => transcript !== language), transcriptNewLanguage!]
+                  : [...current, transcriptNewLanguage!],
+              )
+            );
+            if (isReplacement) {
+              setShowAddedToast(true);
+            } else {
+              setIsSubmittingNewTranscript(false);
+              setPendingFileName('');
+              setIsAddingTranscript(false);
+              setSelectedFile(null);
+              setShowAddTranscriptError(false);
+              setShowAddedToast(true);
+            }
+          },
+          onError: (error) => {
+            const response = (error as { response?: { data?: { error?: string; }; }; }).response;
+            const message = response?.data?.error || (isReplacement
+              ? `Failed to replace ${language} with ${transcriptNewLanguage}.`
+              : `Failed to add ${transcriptNewLanguage}.`);
+            setTranscriptErrors([message]);
+            setTranscriptStatus(RequestStatus.FAILED);
+            if (!isReplacement) {
+              setIsSubmittingNewTranscript(false);
+              setPendingFileName('');
+              setSelectedFile(null);
+              setShowAddTranscriptError(true);
+            }
+          },
+        });
         break;
+      }
       /* istanbul ignore next */
       default:
         break;
@@ -224,10 +226,10 @@ const TranscriptTab = ({ video }: TranscriptTabProps) => {
       <div ref={divRef} style={{ overflowY: 'auto' }} className="px-1 py-2">
         <ErrorAlert
           hideHeading={false}
-          isError={!isAddingTranscript && transcriptStatus === RequestStatus.FAILED && !isEmpty(errors.transcript)}
+          isError={!isAddingTranscript && transcriptStatus === RequestStatus.FAILED && transcriptErrors.length > 0}
         >
           <ul className="p-0">
-            {errors.transcript.map(message => (
+            {transcriptErrors.map(message => (
               <li key={`transcript-error-${message}`} style={{ listStyle: 'none' }}>
                 {intl.formatMessage(messages.errorAlertMessage, { message })}
               </li>
@@ -380,10 +382,7 @@ const TranscriptTab = ({ video }: TranscriptTabProps) => {
         </div>
       )}
       <Toast show={showAddedToast} onClose={() => setShowAddedToast(false)}>
-        <Stack direction="horizontal" gap={2} className="align-items-center">
-          <Icon src={CheckCircle} className="text-success" />
-          <span>{intl.formatMessage(messages.newTranscriptAddedLabel)}</span>
-        </Stack>
+        {intl.formatMessage(messages.newTranscriptAddedLabel)}
       </Toast>
     </Stack>
   );

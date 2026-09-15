@@ -19,20 +19,18 @@ import { AppProvider } from '@edx/frontend-platform/react';
 import { IntlProvider } from '@edx/frontend-platform/i18n';
 
 import initializeStore from '../../../store';
-import { executeThunk } from '../../../utils';
-import { RequestStatus } from '../../../data/constants';
 import TranscriptTab from './TranscriptTab';
 import {
   courseId,
   initialState,
 } from '../factories/mockApiResponses';
+import { videosQueryKeys } from '../data/queryKeys';
 
-import { getApiBaseUrl } from '../data/api';
+import { getApiBaseUrl, getVideosUrl } from '../data/api';
 import messages from './messages';
 import transcriptRowMessages from './transcript-item/messages';
 import editorMessages from '../transcript-editor/messages';
 import VideosPageProvider from '../VideosPageProvider';
-import { deleteVideoTranscript } from '../data/thunks';
 
 ReactDOM.createPortal = jest.fn((node) => node as React.ReactPortal);
 
@@ -77,7 +75,7 @@ const openAddForm = async () => {
   });
 };
 
-const selectLanguage = async (languageText, dropdownEl = null) => {
+const selectLanguage = async (languageText: string, dropdownEl: HTMLElement | null = null) => {
   const dropdown = dropdownEl || screen.getByTestId('language-select-dropdown');
   await act(async () => {
     fireEvent.click(dropdown);
@@ -102,7 +100,9 @@ describe('TranscriptTab', () => {
     store = initializeStore(initialState);
     axiosMock = new MockAdapter(getAuthenticatedHttpClient());
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(videosQueryKeys.page(courseId), initialState.videos.pageSettings);
     axiosMock.onGet(/course_waffle_flags/).reply(200, {});
+    axiosMock.onGet(getVideosUrl(courseId)).reply(200, initialState.videos.pageSettings);
   });
 
   describe('with no transcripts preloaded', () => {
@@ -145,7 +145,7 @@ describe('TranscriptTab', () => {
         });
         const fileInputs = document.querySelectorAll('input[type="file"]');
         await act(async () => {
-          await user.upload(fileInputs[fileInputs.length - 1], file);
+          await user.upload(fileInputs[fileInputs.length - 1] as HTMLInputElement, file);
         });
 
         const submitButton = screen.getByText(messages.addTranscriptButtonLabel.defaultMessage);
@@ -153,8 +153,7 @@ describe('TranscriptTab', () => {
           fireEvent.click(submitButton);
         });
 
-        const addStatus = store.getState().videos.transcriptStatus;
-        expect(addStatus).toEqual(RequestStatus.SUCCESSFUL);
+        expect(await screen.findByText(messages.newTranscriptAddedLabel.defaultMessage)).toBeVisible();
       });
 
       it('should show default error message on upload failure', async () => {
@@ -170,7 +169,7 @@ describe('TranscriptTab', () => {
         });
         const fileInputs = document.querySelectorAll('input[type="file"]');
         await act(async () => {
-          await user.upload(fileInputs[fileInputs.length - 1], file);
+          await user.upload(fileInputs[fileInputs.length - 1] as HTMLInputElement, file);
         });
 
         const submitButton = screen.getByText(messages.addTranscriptButtonLabel.defaultMessage);
@@ -178,8 +177,7 @@ describe('TranscriptTab', () => {
           fireEvent.click(submitButton);
         });
 
-        const addStatus = store.getState().videos.transcriptStatus;
-        expect(addStatus).toEqual(RequestStatus.FAILED);
+        expect(await screen.findByText(messages.addTranscriptFailedLabel.defaultMessage)).toBeVisible();
       });
     });
   });
@@ -222,20 +220,11 @@ describe('TranscriptTab', () => {
           .find(el => el.closest('.btn-danger') || el.classList.contains('btn-danger'));
         axiosMock.onDelete(`${getApiBaseUrl()}/transcript_delete/${courseId}/mOckID0/ar`).reply(204);
         await act(async () => {
-          fireEvent.click(confirmButton);
-          await executeThunk(
-            deleteVideoTranscript({
-              language: 'ar',
-              videoId: updatedProps.id,
-              transcripts: updatedProps.transcripts,
-              apiUrl: `/transcript_delete/${courseId}`,
-            }),
-            store.dispatch,
-          );
+          fireEvent.click(confirmButton!);
         });
-        const deleteStatus = store.getState().videos.transcriptStatus;
-        expect(deleteStatus).toEqual(RequestStatus.SUCCESSFUL);
-        expect(screen.queryByText(transcriptRowMessages.deleteConfirmationHeader.defaultMessage)).toBeNull();
+        await waitFor(() =>
+          expect(screen.queryByText(transcriptRowMessages.deleteConfirmationHeader.defaultMessage)).toBeNull()
+        );
       });
 
       it('should show error message on delete failure', async () => {
@@ -243,20 +232,11 @@ describe('TranscriptTab', () => {
           .find(el => el.closest('.btn-danger') || el.classList.contains('btn-danger'));
         axiosMock.onDelete(`${getApiBaseUrl()}/transcript_delete/${courseId}/mOckID0/ar`).reply(404);
         await act(async () => {
-          fireEvent.click(confirmButton);
-          await executeThunk(
-            deleteVideoTranscript({
-              language: 'ar',
-              videoId: updatedProps.id,
-              transcripts: updatedProps.transcripts,
-              apiUrl: `/transcript_delete/${courseId}`,
-            }),
-            store.dispatch,
-          );
+          fireEvent.click(confirmButton!);
         });
-        const deleteStatus = store.getState().videos.transcriptStatus;
-        expect(deleteStatus).toEqual(RequestStatus.FAILED);
-        expect(screen.queryByText(transcriptRowMessages.deleteConfirmationHeader.defaultMessage)).toBeNull();
+        await waitFor(() =>
+          expect(screen.queryByText(transcriptRowMessages.deleteConfirmationHeader.defaultMessage)).toBeNull()
+        );
         expect(screen.getAllByText('Failed to delete ar transcript.')[0]).toBeVisible();
       });
     });
@@ -280,8 +260,7 @@ describe('TranscriptTab', () => {
         await act(async () => {
           fireEvent.click(downloadButton);
         });
-        const downloadStatus = store.getState().videos.transcriptStatus;
-        expect(downloadStatus).toEqual(RequestStatus.SUCCESSFUL);
+        expect(screen.queryByText(`Failed to download mOckID0.mp4-ar.srt.`)).toBeNull();
       });
 
       it('should show error message on download failure', async () => {
@@ -292,9 +271,7 @@ describe('TranscriptTab', () => {
         await act(async () => {
           fireEvent.click(downloadButton);
         });
-        const downloadStatus = store.getState().videos.transcriptStatus;
-        expect(downloadStatus).toEqual(RequestStatus.FAILED);
-        expect(screen.getAllByText(`Failed to download ${filename}.`)[0]).toBeVisible();
+        expect(await screen.findByText(`Failed to download ${filename}.`)).toBeVisible();
       });
     });
   });
@@ -327,14 +304,10 @@ describe('TranscriptTab', () => {
 
         await act(async () => {
           const fileInputs = document.querySelectorAll('input[type="file"]');
-          await user.upload(fileInputs[0], file);
+          await user.upload(fileInputs[0] as HTMLInputElement, file);
         });
 
-        const addStatus = store.getState().videos.transcriptStatus;
-        expect(addStatus).toEqual(RequestStatus.SUCCESSFUL);
-
-        const updatedTranscripts = store.getState().models.videos[defaultProps.id].transcripts;
-        expect(updatedTranscripts).toEqual(['fr', 'en']);
+        expect(await screen.findByText(messages.newTranscriptAddedLabel.defaultMessage)).toBeVisible();
       });
 
       it('should show error message on replace failure', async () => {
@@ -343,12 +316,10 @@ describe('TranscriptTab', () => {
 
         await act(async () => {
           const fileInputs = document.querySelectorAll('input[type="file"]');
-          await user.upload(fileInputs[0], file);
+          await user.upload(fileInputs[0] as HTMLInputElement, file);
         });
 
-        const addStatus = store.getState().videos.transcriptStatus;
-        expect(addStatus).toEqual(RequestStatus.FAILED);
-        expect(screen.getAllByText('Failed to replace ar with en.')[0]).toBeVisible();
+        expect(await screen.findByText('Failed to replace ar with en.')).toBeVisible();
       });
     });
   });
@@ -356,7 +327,9 @@ describe('TranscriptTab', () => {
     const srt = '1\n00:00:01,000 --> 00:00:02,000\nHello\n';
     const chooseFile = async (file) => {
       await act(async () => {
-        fireEvent.change(document.querySelector('input[type="file"]'), { target: { files: file ? [file] : [] } });
+        fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+          target: { files: file ? [file] : [] },
+        });
       });
     };
 

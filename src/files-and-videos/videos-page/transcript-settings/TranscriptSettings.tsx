@@ -2,12 +2,16 @@ import React, { useState } from 'react';
 import type {
   TranscriptCredentials,
   TranscriptPreferencesForm,
-  TranscriptPreferencesState,
   TranscriptionPlans,
 } from '../data/api';
-import type { VideosState } from '../data/slice';
 import { isEmpty } from 'lodash';
-import { useDispatch, useSelector } from 'react-redux';
+import {
+  useDeleteTranscriptPreferences,
+  useSetTranscriptCredentials,
+  useSetTranscriptPreferences,
+} from '../data/apiHooks';
+import { useVideosPageContext } from '../VideosPageProvider';
+import { RequestStatus, type RequestStatusType } from '../../../data/constants';
 import { FormattedMessage } from '@edx/frontend-platform/i18n';
 import {
   ActionRow,
@@ -21,21 +25,8 @@ import { ChevronLeft, ChevronRight, Close } from '@openedx/paragon/icons';
 import { AdditionalTranslationsComponentSlot } from '../../../plugin-slots/AdditionalTranslationsComponentSlot';
 import OrderTranscriptForm from './OrderTranscriptForm';
 import messages from './messages';
-import {
-  clearAutomatedTranscript,
-  resetErrors,
-  updateTranscriptCredentials,
-  updateTranscriptPreference,
-} from '../data/thunks';
 
 type TranscriptFormData = TranscriptPreferencesForm & TranscriptCredentials;
-type TranscriptSettingsPageSettings = {
-  activeTranscriptPreferences?: TranscriptPreferencesState | null;
-  transcriptCredentials: Record<string, boolean>;
-  videoTranscriptSettings: { transcriptionPlans: TranscriptionPlans; };
-  isAiTranslationsEnabled: boolean;
-};
-type TranscriptSettingsState = Omit<VideosState, 'pageSettings'> & { pageSettings: TranscriptSettingsPageSettings; };
 type TranscriptSettingsProps = {
   isTranscriptSettingsOpen: boolean;
   closeTranscriptSettings: () => void;
@@ -47,29 +38,46 @@ const TranscriptSettings = ({
   closeTranscriptSettings,
   courseId,
 }: TranscriptSettingsProps) => {
-  const dispatch = useDispatch();
-  const { errors: errorMessages, pageSettings, transcriptStatus } = useSelector(
-    (state: { videos: TranscriptSettingsState; }) => state.videos,
-  );
+  const { pageSettings } = useVideosPageContext();
   const {
     activeTranscriptPreferences,
-    transcriptCredentials,
-    videoTranscriptSettings,
-    isAiTranslationsEnabled,
+    videoTranscriptSettings = {} as { transcriptionPlans?: TranscriptionPlans | null; },
+    isAiTranslationsEnabled = false,
   } = pageSettings;
-  const { transcriptionPlans } = videoTranscriptSettings || {};
+  const transcriptCredentials = pageSettings.transcriptCredentials || {};
+  const transcriptionPlans = videoTranscriptSettings.transcriptionPlans || {};
+  const deletePreferencesMutation = useDeleteTranscriptPreferences(courseId);
+  const credentialsMutation = useSetTranscriptCredentials(courseId);
+  const preferencesMutation = useSetTranscriptPreferences(courseId);
   const [transcriptType, setTranscriptType] = useState<string | null>(null);
   const [isAiTranslations, setIsAiTranslations] = useState(false);
+  const [transcriptStatus, setTranscriptStatus] = useState<RequestStatusType | ''>('');
+  const [errorMessages, setErrorMessages] = useState<{ transcript: string[]; }>({ transcript: [] });
 
   const handleOrderTranscripts = (data: TranscriptFormData, provider: string) => {
     const noCredentials = isEmpty(transcriptCredentials) || data.apiKey;
-    dispatch(resetErrors({ errorType: 'transcript' }));
+    setErrorMessages({ transcript: [] });
+    setTranscriptStatus(RequestStatus.IN_PROGRESS);
+    const onError = (error: unknown, fallback: string) => {
+      const response = (error as { response?: { data?: { error?: string; }; }; }).response;
+      setErrorMessages({ transcript: [response?.data?.error || fallback] });
+      setTranscriptStatus(RequestStatus.FAILED);
+    };
     if (provider === 'order') {
-      dispatch(clearAutomatedTranscript({ courseId }));
+      deletePreferencesMutation.mutate(undefined, {
+        onSuccess: () => setTranscriptStatus(RequestStatus.SUCCESSFUL),
+        onError: error => onError(error, 'Failed to update order transcripts settings.'),
+      });
     } else if (noCredentials) {
-      dispatch(updateTranscriptCredentials({ courseId, data: { ...data, provider, global: false } }));
+      credentialsMutation.mutate({ ...data, provider, global: false }, {
+        onSuccess: () => setTranscriptStatus(RequestStatus.SUCCESSFUL),
+        onError: error => onError(error, `Failed to update ${provider} credentials.`),
+      });
     } else {
-      dispatch(updateTranscriptPreference({ courseId, data: { ...data, provider, global: false } }));
+      preferencesMutation.mutate({ ...data, provider, global: false }, {
+        onSuccess: () => setTranscriptStatus(RequestStatus.SUCCESSFUL),
+        onError: error => onError(error, `Failed to update ${provider} transcripts settings.`),
+      });
     }
   };
 

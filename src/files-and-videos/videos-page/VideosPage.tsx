@@ -1,63 +1,42 @@
-import { AgreementGated } from '@src/constants';
-import { AlertAgreementGatedFeature } from '@src/generic/agreement-gated-feature';
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Helmet } from 'react-helmet';
-import { useDispatch, useSelector } from 'react-redux';
-
 import { useIntl } from '@edx/frontend-platform/i18n';
 import { Container } from '@openedx/paragon';
-import CourseVideosSlot from '@src/plugin-slots/CourseVideosSlot';
-import { RequestStatus } from '@src/data/constants';
+import { AgreementGated } from '@src/constants';
+import { AlertAgreementGatedFeature } from '@src/generic/agreement-gated-feature';
 import Placeholder from '@src/editors/Placeholder';
 import getPageHeadTitle from '@src/generic/utils';
 import EditVideoAlertsSlot from '@src/plugin-slots/EditVideoAlertsSlot';
-
-import { DeprecatedReduxState } from '@src/store';
+import CourseVideosSlot from '@src/plugin-slots/CourseVideosSlot';
 import { useCourseAuthoringContext } from '@src/CourseAuthoringContext';
 import { EditFileErrors } from '../generic';
-import { fetchVideos, resetErrors } from './data/thunks';
 import messages from './messages';
-import VideosPageProvider from './VideosPageProvider';
-import { VideoErrors } from './data/slice';
+import VideosPageProvider, { useVideosPageContext } from './VideosPageProvider';
 
-const VideosPage = () => {
+const VideosPageContent = () => {
   const intl = useIntl();
-  const dispatch = useDispatch();
-  const { courseId, courseDetails } = useCourseAuthoringContext();
+  const { courseDetails } = useCourseAuthoringContext();
   const {
+    errors,
+    resetErrors,
     loadingStatus,
-    addingStatus: addVideoStatus,
-    deletingStatus: deleteVideoStatus,
-    updatingStatus: updateVideoStatus,
-    errors: errorMessages,
-  } = useSelector((state: DeprecatedReduxState) => state.videos);
-
-  const handleErrorReset = (error: { errorType: keyof VideoErrors; }) => dispatch(resetErrors(error));
-
-  useEffect(() => {
-    dispatch(fetchVideos(courseId));
-  }, [courseId]);
-
-  if (loadingStatus === RequestStatus.DENIED) {
-    return (
-      <div data-testid="under-construction-placeholder" className="row justify-contnt-center m-6">
-        <Placeholder />
-      </div>
-    );
-  }
+    addingStatus,
+    deletingStatus,
+    updatingStatus,
+  } = useVideosPageContext();
 
   return (
-    <VideosPageProvider courseId={courseId}>
+    <>
       <Helmet>
         <title>{getPageHeadTitle(courseDetails?.name || '', intl.formatMessage(messages.heading))}</title>
       </Helmet>
       <Container size="xl" className="p-4 pt-4.5">
         <EditFileErrors
-          resetErrors={handleErrorReset}
-          errorMessages={errorMessages}
-          addFileStatus={addVideoStatus}
-          deleteFileStatus={deleteVideoStatus}
-          updateFileStatus={updateVideoStatus}
+          resetErrors={resetErrors}
+          errorMessages={errors}
+          addFileStatus={addingStatus}
+          deleteFileStatus={deletingStatus}
+          updateFileStatus={updatingStatus}
           loadingStatus={loadingStatus}
         />
         <AlertAgreementGatedFeature
@@ -67,8 +46,33 @@ const VideosPage = () => {
         <h2>{intl.formatMessage(messages.heading)}</h2>
         <CourseVideosSlot />
       </Container>
+    </>
+  );
+};
+
+const VideosPage = () => {
+  const { courseId } = useCourseAuthoringContext();
+
+  return (
+    <VideosPageProvider courseId={courseId}>
+      <VideosPageDeniedBoundary>
+        <VideosPageContent />
+      </VideosPageDeniedBoundary>
     </VideosPageProvider>
   );
+};
+
+const VideosPageDeniedBoundary = ({ children }: { children: React.ReactNode; }) => {
+  const { pageQuery } = useVideosPageContext();
+  const status = (pageQuery.error as { response?: { status?: number; }; })?.response?.status;
+  if (status === 403) {
+    return (
+      <div data-testid="under-construction-placeholder" className="row justify-contnt-center m-6">
+        <Placeholder />
+      </div>
+    );
+  }
+  return <>{children}</>;
 };
 
 export default VideosPage;

@@ -12,6 +12,7 @@ import { WarningFilled } from '@openedx/paragon/icons';
 import messages from '../messages';
 import UploadProgressList from './UploadProgressList';
 import { RequestStatus } from '../../../data/constants';
+import type { UploadData } from '../data/api';
 
 const LegacyModalDialog = ModalDialog as unknown as React.ComponentType<
   Omit<React.ComponentProps<typeof ModalDialog>, 'isOverflowVisible'>
@@ -20,11 +21,10 @@ const LegacyHyperlink = Hyperlink as unknown as React.ComponentType<
   Omit<React.ComponentProps<typeof Hyperlink>, 'children'>
 >;
 
-type UploadVideo = { name: string; status: string; uploadPercentage: string | number; };
 type UploadModalProps = {
   isUploadTrackerOpen: boolean;
   handleUploadCancel: () => void;
-  currentUploadingIdsRef: { uploadData: Record<string, UploadVideo>; uploadCount: number; };
+  currentUploadingIdsRef: { uploadData: Record<string, UploadData>; uploadCount: number; };
   addVideoStatus: string;
 };
 

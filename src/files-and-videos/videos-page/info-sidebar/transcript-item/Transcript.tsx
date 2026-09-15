@@ -56,7 +56,8 @@ const Transcript = ({
       }
       const reader = new FileReader();
       reader.onload = (e) => {
-        if (!isValidSrt(e.target.result)) {
+        const result = e.target?.result;
+        if (typeof result !== 'string' || !isValidSrt(result)) {
           setInvalidSrtFile(true);
         } else {
           setInvalidSrtFile(false);

@@ -26,6 +26,7 @@ import type {
   VideoPageResponse,
   VideoUsageResponse,
   VideoListApiResponse,
+  RawVideo,
 } from './types';
 export type {
   AddThumbnailParams,
@@ -44,10 +45,12 @@ export type {
   TranscriptionPlans,
   UploadData,
   UploadingIdsRef,
+  UploadTranscriptParams,
   UsageLocation,
   Video,
   VideoActiveStatus,
   VideoImageSettings,
+  VideoListResponse,
   VideoPageSettings,
   VideoStatus,
   VideoTranscriptStatus,
@@ -64,6 +67,22 @@ export const getApiBaseUrl = (): string => getConfig().STUDIO_BASE_URL;
 export const getVideosUrl = (courseId: string): string => `${getApiBaseUrl()}/api/contentstore/v1/videos/${courseId}`;
 export const getCourseVideosApiUrl = (courseId: string): string => `${getApiBaseUrl()}/videos/${courseId}`;
 
+const normalizeRawVideo = (video: Partial<RawVideo>): RawVideo => ({
+  edxVideoId: video.edxVideoId ?? '',
+  clientVideoId: video.clientVideoId ?? '',
+  created: video.created ?? '',
+  courseVideoImageUrl: video.courseVideoImageUrl ?? null,
+  transcripts: video.transcripts ?? [],
+  status: video.status ?? '',
+  duration: video.duration ?? null,
+  downloadLink: video.downloadLink ?? '',
+  fileSize: video.fileSize ?? 0,
+  transcriptUrls: video.transcriptUrls ?? {},
+  transcriptionStatus: video.transcriptionStatus ?? '',
+  errorDescription: video.errorDescription ?? '',
+  statusNontranslated: video.statusNontranslated,
+});
+
 /**
  * Fetches the course custom pages for provided course
  * @param {string} courseId
@@ -72,13 +91,14 @@ export const getCourseVideosApiUrl = (courseId: string): string => `${getApiBase
 export async function getVideos(courseId: string): Promise<VideoPageSettings> {
   const { data } = await getAuthenticatedHttpClient()
     .get<VideoPageResponse>(getVideosUrl(courseId));
-  const { video_transcript_settings: videoTranscriptSettings } = data;
-  const { transcription_plans: transcriptionPlans } = videoTranscriptSettings;
+  const page = camelCaseObject(data);
+  const videoTranscriptSettings = page.videoTranscriptSettings ?? {};
   return {
-    ...camelCaseObject(data),
+    ...page,
+    previousUploads: (page.previousUploads ?? []).map(normalizeRawVideo),
     videoTranscriptSettings: {
-      ...camelCaseObject(videoTranscriptSettings),
-      transcriptionPlans,
+      ...videoTranscriptSettings,
+      transcriptionPlans: videoTranscriptSettings.transcriptionPlans ?? null,
     },
   };
 }
@@ -120,7 +140,8 @@ export async function getAllUsagePaths(
 export async function fetchVideoList(courseId: string): Promise<VideoListResponse> {
   const { data } = await getAuthenticatedHttpClient()
     .get<VideoListApiResponse>(getCourseVideosApiUrl(courseId));
-  return camelCaseObject(data);
+  const response = camelCaseObject(data);
+  return { videos: (response.videos ?? []).map(normalizeRawVideo) };
 }
 
 export async function deleteTranscript(
@@ -221,7 +242,8 @@ export async function getVideoUsagePaths(
 ): Promise<{ usageLocations: UsageLocation[]; }> {
   const { data } = await getAuthenticatedHttpClient()
     .get<VideoUsageResponse>(`${getVideosUrl(courseId)}/${videoId}/usage`);
-  return camelCaseObject(data);
+  const response = camelCaseObject(data);
+  return { usageLocations: response.usageLocations ?? [] };
 }
 
 /**

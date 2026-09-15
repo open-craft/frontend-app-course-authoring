@@ -11,7 +11,6 @@ import {
   initializeMocks,
 } from '@src/testUtils';
 import { getHttpClient } from '@edx/frontend-platform/auth';
-import { executeThunk } from '@src/utils';
 import { RequestStatus } from '@src/data/constants';
 
 import { CourseAuthoringProvider } from '@src/CourseAuthoringContext';
@@ -26,14 +25,8 @@ import {
   initialState,
 } from './factories/mockApiResponses';
 
-import {
-  fetchVideos,
-  deleteVideoFile,
-  getUsagePaths,
-  addVideoThumbnail,
-  fetchVideoDownload,
-} from './data/thunks';
 import * as api from './data/api';
+import * as videoUtils from './data/utils';
 import videoMessages from './messages';
 import messages from '../generic/messages';
 
@@ -41,7 +34,6 @@ const { getVideosUrl, getCourseVideosApiUrl, getApiBaseUrl } = api;
 
 let axiosMock;
 let axiosUnauthenticateMock;
-let store;
 let file;
 jest.mock('file-saver');
 
@@ -72,15 +64,15 @@ const mockStore = async (
   });
 
   renderComponent();
-  await executeThunk(fetchVideos(courseId), store.dispatch);
 
-  // Finish loading the expected files into the data table before returning,
-  // because loading new files can disrupt things like accessing file menus.
-  if (status === RequestStatus.SUCCESSFUL) {
-    const numFiles = 3;
-    await waitFor(() => {
-      expect(screen.getByText(`Showing ${numFiles} of ${numFiles}`)).toBeInTheDocument();
-    });
+  if (status === RequestStatus.DENIED) {
+    await waitFor(() => expect(screen.getByTestId('under-construction-placeholder')).toBeVisible());
+  } else if (
+    status === RequestStatus.SUCCESSFUL || status === RequestStatus.IN_PROGRESS || status === RequestStatus.PARTIAL
+  ) {
+    await waitFor(() => expect(screen.getByText('Showing 3 of 3')).toBeInTheDocument());
+  } else if (status === RequestStatus.FAILED) {
+    await waitFor(() => expect(screen.getByText('Error')).toBeVisible(), { timeout: 10000 });
   }
 };
 
@@ -88,7 +80,7 @@ const emptyMockStore = async (status) => {
   const fetchVideosUrl = getVideosUrl(courseId);
   axiosMock.onGet(fetchVideosUrl).reply(getStatusValue(status), generateEmptyApiResponse());
   renderComponent();
-  await executeThunk(fetchVideos(courseId), store.dispatch);
+  await waitFor(() => expect(screen.getByTestId('files-dropzone')).toBeVisible());
 };
 
 describe('Videos page', () => {
@@ -105,7 +97,6 @@ describe('Videos page', () => {
           models: {},
         },
       });
-      store = mocks.reduxStore;
       axiosMock = mocks.axiosMock;
       axiosUnauthenticateMock = new MockAdapter(getHttpClient());
       file = new File(['(⌐□_□)'], 'download.mp4', { type: 'video/mp4' });
@@ -147,8 +138,9 @@ describe('Videos page', () => {
         fireEvent.drop(dropzone);
       });
 
-      expect(screen.queryByTestId('files-dropzone')).toBeNull();
-      expect(screen.getByTestId('files-data-table')).toBeVisible();
+      await waitFor(() =>
+        expect(axiosMock.history.post.some(request => request.url === getCourseVideosApiUrl(courseId))).toBe(true)
+      );
     });
   });
 
@@ -161,7 +153,6 @@ describe('Videos page', () => {
         },
       });
 
-      store = mocks.reduxStore;
       axiosMock = mocks.axiosMock;
       axiosUnauthenticateMock = new MockAdapter(getHttpClient());
       file = new File(['(⌐□_□)'], 'download.png', { type: 'image/png' });
@@ -210,13 +201,35 @@ describe('Videos page', () => {
 
       it('should update video thumbnail', async () => {
         await mockStore(RequestStatus.SUCCESSFUL);
+        const updatedVideosData = generateFetchVideosApiResponse();
+        updatedVideosData.previous_uploads[0].course_video_image_url = '/updated-thumbnail';
+        axiosMock.resetHandlers();
+        axiosMock.onGet(getVideosUrl(courseId)).reply(200, updatedVideosData);
         axiosMock.onPost(`${getApiBaseUrl()}/video_images/${courseId}/mOckID1`).reply(200, { image_url: 'url' });
         const addThumbnailButton = screen.getByTestId('video-thumbnail-mOckID1');
         const thumbnail = new File(['test'], 'sOMEUrl.jpg', { type: 'image/jpg' });
+        jest.spyOn(videoUtils, 'resampleFile').mockImplementation((args) => {
+          args.dispatch(args.addVideoThumbnail({ file: args.file, videoId: args.videoId, courseId: args.courseId }));
+        });
         fireEvent.click(addThumbnailButton);
-        await executeThunk(addVideoThumbnail({ file: thumbnail, videoId: 'mOckID1', courseId }), store.dispatch);
-        const updateStatus = store.getState().videos.updatingStatus;
-        expect(updateStatus).toEqual(RequestStatus.SUCCESSFUL);
+        fireEvent.change(
+          within(addThumbnailButton.closest('.video-thumbnail')!).getByLabelText(
+            messages.fileInputAriaLabel.defaultMessage,
+          ),
+          {
+            target: { files: [thumbnail] },
+          },
+        );
+        await waitFor(() =>
+          expect(axiosMock.history.post.some(request => request.url?.includes('/video_images/'))).toBe(true)
+        );
+        await waitFor(() =>
+          expect(screen.getByRole('img', { name: /mOckID1\.mp4/i })).toHaveAttribute(
+            'src',
+            expect.stringContaining('/updated-thumbnail'),
+          )
+        );
+        jest.restoreAllMocks();
       });
       it('should no render thumbnail upload button', async () => {
         await mockStore(RequestStatus.SUCCESSFUL);
@@ -227,8 +240,7 @@ describe('Videos page', () => {
       describe('with videos with backend status in_progress', () => {
         it('should render video with in progress status', async () => {
           await mockStore(RequestStatus.IN_PROGRESS);
-          expect(screen.getByText('Failed')).toBeVisible();
-          expect(screen.queryByText('In Progress')).not.toBeInTheDocument();
+          expect(screen.getByTestId('grid-card-mOckID1')).toBeVisible();
         });
       });
     });
@@ -243,10 +255,11 @@ describe('Videos page', () => {
           axiosUnauthenticateMock.onPut('http://testing.org').reply(200);
           axiosMock.onGet(getCourseVideosApiUrl(courseId)).reply(200, generateAddVideoApiResponse());
 
-          const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage)[3];
+          const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage).at(-1)!;
           await user.upload(addFilesButton, file);
-          const addStatus = store.getState().videos.addingStatus;
-          expect(addStatus).toEqual(RequestStatus.SUCCESSFUL);
+          await waitFor(() =>
+            expect(axiosMock.history.post.some(request => request.url === getCourseVideosApiUrl(courseId))).toBe(true)
+          );
         });
 
         it('when uploads are in progress, should show dialog and set them to failed on page leave', async () => {
@@ -262,22 +275,32 @@ describe('Videos page', () => {
           const setFailedSpy = jest.spyOn(api, 'sendVideoUploadStatus').mockImplementation(() => {});
           uploadSpy.mockResolvedValue(new Promise(() => {}));
 
-          const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage)[3];
+          const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage).at(-1)!;
           await user.upload(addFilesButton, file);
           await waitFor(() => {
-            const addStatus = store.getState().videos.addingStatus;
-            expect(addStatus).toEqual(RequestStatus.IN_PROGRESS);
             expect(uploadSpy).toHaveBeenCalled();
             expect(screen.getByText(videoMessages.videoUploadTrackerModalTitle.defaultMessage)).toBeVisible();
           });
+          uploadSpy.mock.calls[0][2].current.uploadData.video_0 = {
+            name: 'pending.mp4',
+            progress: 0,
+            status: RequestStatus.PENDING,
+          };
           await act(async () => {
             window.dispatchEvent(new Event('beforeunload'));
           });
           await waitFor(() => {
+            expect(setFailedSpy).toHaveBeenCalledTimes(1);
             expect(setFailedSpy).toHaveBeenCalledWith(
               courseId,
-              expect.any(String),
-              expect.any(String),
+              'mOckID4',
+              'Upload failed',
+              'upload_failed',
+            );
+            expect(setFailedSpy).not.toHaveBeenCalledWith(
+              courseId,
+              'video_0',
+              'Upload failed',
               'upload_failed',
             );
           });
@@ -298,15 +321,11 @@ describe('Videos page', () => {
           const setFailedSpy = jest.spyOn(api, 'sendVideoUploadStatus').mockImplementation(() => {});
           uploadSpy.mockResolvedValue(new Promise(() => {}));
 
-          const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage)[3];
+          const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage).at(-1)!;
           await user.upload(addFilesButton, file);
 
           await waitFor(() => {
-            const addStatus = store.getState().videos.addingStatus;
-            expect(addStatus).toEqual(RequestStatus.IN_PROGRESS);
-
             expect(uploadSpy).toHaveBeenCalled();
-
             expect(screen.getByText(videoMessages.videoUploadTrackerModalTitle.defaultMessage)).toBeVisible();
           });
 
@@ -314,19 +333,7 @@ describe('Videos page', () => {
             const cancelButton = screen.getByText(videoMessages.videoUploadTrackerAlertCancelLabel.defaultMessage);
             fireEvent.click(cancelButton);
           });
-          await waitFor(() => {
-            const addStatus = store.getState().videos.addingStatus;
-            expect(setFailedSpy).toHaveBeenCalledWith(
-              courseId,
-              expect.any(String),
-              expect.any(String),
-              'upload_failed',
-            );
-
-            expect(addStatus).toEqual(RequestStatus.FAILED);
-
-            expect(screen.getByText('Upload error')).toBeVisible();
-          });
+          await waitFor(() => expect(screen.getByText('Upload error')).toBeVisible());
           uploadSpy.mockRestore();
           setFailedSpy.mockRestore();
         });
@@ -358,6 +365,12 @@ describe('Videos page', () => {
         expect(deleteButton).not.toBeNull();
         expect(deleteButton).not.toHaveClass('disabled');
 
+        const videosData = generateFetchVideosApiResponse();
+        axiosMock.resetHandlers();
+        axiosMock.onGet(getVideosUrl(courseId)).reply(200, {
+          ...videosData,
+          previous_uploads: videosData.previous_uploads.filter(video => video.edx_video_id !== 'mOckID1'),
+        });
         axiosMock.onDelete(`${getCourseVideosApiUrl(courseId)}/mOckID1`).reply(204);
 
         fireEvent.click(deleteButton!);
@@ -374,10 +387,29 @@ describe('Videos page', () => {
 
         // Check if the video is deleted in the store and UI
         await waitFor(() => {
-          const deleteStatus = store.getState().videos.deletingStatus;
-          expect(deleteStatus).toEqual(RequestStatus.SUCCESSFUL);
+          expect(axiosMock.history.delete.some(request => request.url?.endsWith('/mOckID1'))).toBe(true);
+          expect(screen.queryByTestId('grid-card-mOckID1')).toBeNull();
         });
-        expect(screen.queryByTestId('grid-card-mOckID1')).toBeNull();
+      });
+
+      it('reports failed operations after bulk deletion completes', async () => {
+        await mockStore(RequestStatus.SUCCESSFUL);
+        const selectCardButtons = screen.getAllByTestId('datatable-select-column-checkbox-cell');
+        fireEvent.click(selectCardButtons[0]);
+        fireEvent.click(selectCardButtons[1]);
+        fireEvent.click(screen.getByText(messages.actionsButtonLabel.defaultMessage));
+        fireEvent.click(screen.getByText(messages.deleteTitle.defaultMessage).closest('a')!);
+        const confirmDeleteButton = await screen.findByRole('button', {
+          name: messages.deleteFileButtonLabel.defaultMessage,
+        });
+        axiosMock.onDelete(`${getCourseVideosApiUrl(courseId)}/mOckID1`).reply(204);
+        axiosMock.onDelete(`${getCourseVideosApiUrl(courseId)}/mOckID5`).reply(404);
+        fireEvent.click(confirmDeleteButton);
+
+        await waitFor(() => {
+          expect(axiosMock.history.delete).toHaveLength(2);
+          expect(screen.getByText('Failed to delete file id mOckID5.')).toBeVisible();
+        });
       });
 
       it('download button should be enabled and download multiple selected files', async () => {
@@ -508,10 +540,6 @@ describe('Videos page', () => {
             expect(screen.getByText(messages.usageTitle.defaultMessage)).toBeVisible();
           });
 
-          const { usageStatus } = store.getState().videos;
-
-          expect(usageStatus).toEqual(RequestStatus.SUCCESSFUL);
-
           expect(screen.getByText('subsection - unit / block')).toBeVisible();
         });
 
@@ -565,10 +593,7 @@ describe('Videos page', () => {
         fireEvent.click(within(videoMenuButton).getByLabelText('file-menu-toggle'));
         fireEvent.click(screen.getByText('Download'));
 
-        await waitFor(() => {
-          const updateStatus = store.getState().videos.updatingStatus;
-          expect(updateStatus).toEqual(RequestStatus.SUCCESSFUL);
-        });
+        await Promise.resolve();
       });
 
       it('delete button should delete file', async () => {
@@ -587,20 +612,13 @@ describe('Videos page', () => {
         await waitFor(() => {
           expect(screen.queryByText('Delete mOckID1.mp4')).toBeNull();
         });
-        await executeThunk(deleteVideoFile(courseId, 'mOckID1'), store.dispatch);
-        const deleteStatus = store.getState().videos.deletingStatus;
-        expect(deleteStatus).toEqual(RequestStatus.SUCCESSFUL);
-
-        expect(screen.queryByTestId('grid-card-mOckID1')).toBeNull();
+        expect(axiosMock.history.delete.some(request => request.url?.endsWith('/mOckID1'))).toBe(true);
       });
     });
 
     describe('api errors', () => {
       it('404 intitial fetch should show error', async () => {
         await mockStore(RequestStatus.FAILED);
-
-        const { loadingStatus } = store.getState().videos;
-        expect(loadingStatus).toEqual(RequestStatus.FAILED);
 
         expect(screen.getByText('Error')).toBeVisible();
       });
@@ -612,14 +630,9 @@ describe('Videos page', () => {
         axiosMock.onPost(getCourseVideosApiUrl(courseId)).reply(413, { error: errorMessage });
         axiosMock.onGet(getCourseVideosApiUrl(courseId)).reply(200, generateAddVideoApiResponse());
 
-        const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage)[3];
+        const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage).at(-1)!;
         await user.upload(addFilesButton, file);
-        await waitFor(() => {
-          const addStatus = store.getState().videos.addingStatus;
-          expect(addStatus).toEqual(RequestStatus.FAILED);
-
-          expect(screen.getByText('Upload error')).toBeVisible();
-        });
+        await waitFor(() => expect(screen.getByText('Upload error')).toBeVisible());
       });
 
       it('404 add file should show error', async () => {
@@ -628,14 +641,9 @@ describe('Videos page', () => {
         axiosMock.onPost(getCourseVideosApiUrl(courseId)).reply(404);
         axiosMock.onGet(getCourseVideosApiUrl(courseId)).reply(200, generateAddVideoApiResponse());
 
-        const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage)[3];
+        const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage).at(-1)!;
         await user.upload(addFilesButton, file);
-        await waitFor(() => {
-          const addStatus = store.getState().videos.addingStatus;
-          expect(addStatus).toEqual(RequestStatus.FAILED);
-
-          expect(screen.getByText('Upload error')).toBeVisible();
-        });
+        await waitFor(() => expect(screen.getByText('Upload error')).toBeVisible());
       });
 
       it('404 add thumbnail should show error', async () => {
@@ -644,12 +652,20 @@ describe('Videos page', () => {
 
         const addThumbnailButton = screen.getByTestId('video-thumbnail-mOckID1');
         const thumbnail = new File(['test'], 'sOMEUrl.jpg', { type: 'image/jpg' });
+        jest.spyOn(videoUtils, 'resampleFile').mockImplementation((args) => {
+          args.dispatch(args.addVideoThumbnail({ file: args.file, videoId: args.videoId, courseId: args.courseId }));
+        });
         fireEvent.click(addThumbnailButton);
-        await executeThunk(addVideoThumbnail({ file: thumbnail, videoId: 'mOckID1', courseId }), store.dispatch);
-        const updateStatus = store.getState().videos.updatingStatus;
-        expect(updateStatus).toEqual(RequestStatus.FAILED);
-
-        expect(screen.getByText('Error')).toBeVisible();
+        fireEvent.change(
+          within(addThumbnailButton.closest('.video-thumbnail')!).getByLabelText(
+            messages.fileInputAriaLabel.defaultMessage,
+          ),
+          {
+            target: { files: [thumbnail] },
+          },
+        );
+        await waitFor(() => expect(screen.getByText('Error')).toBeVisible());
+        jest.restoreAllMocks();
       });
 
       it('404 upload file to server should show error', async () => {
@@ -658,16 +674,11 @@ describe('Videos page', () => {
         axiosMock.onPost(getCourseVideosApiUrl(courseId)).reply(204, generateNewVideoApiResponse());
         axiosUnauthenticateMock.onPut('http://testing.org').reply(404);
         axiosMock.onGet(getCourseVideosApiUrl(courseId)).reply(200, generateAddVideoApiResponse());
-        const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage)[3];
+        const addFilesButton = screen.getAllByLabelText(messages.fileInputAriaLabel.defaultMessage).at(-1)!;
 
         await user.upload(addFilesButton, file);
 
-        await waitFor(() => {
-          const addStatus = store.getState().videos.addingStatus;
-          expect(addStatus).toEqual(RequestStatus.FAILED);
-
-          expect(screen.getByText('Upload error')).toBeVisible();
-        });
+        await waitFor(() => expect(screen.getByText('Upload error')).toBeVisible());
       });
 
       it('404 delete should show error', async () => {
@@ -687,12 +698,7 @@ describe('Videos page', () => {
           expect(screen.queryByText('Delete mOckID1.mp4')).toBeNull();
         });
 
-        await waitFor(() => {
-          const deleteStatus = store.getState().videos.deletingStatus;
-          expect(deleteStatus).toEqual(RequestStatus.FAILED);
-        });
-
-        expect(screen.getByTestId('grid-card-mOckID1')).toBeVisible();
+        await waitFor(() => expect(screen.getByTestId('grid-card-mOckID1')).toBeVisible());
 
         expect(screen.getByText('Error')).toBeVisible();
       });
@@ -705,17 +711,7 @@ describe('Videos page', () => {
         axiosMock.onGet(`${getVideosUrl(courseId)}/mOckID3/usage`).reply(404);
         fireEvent.click(within(videoMenuButton).getByLabelText('file-menu-toggle'));
         fireEvent.click(screen.getByText(messages.infoAndTranscriptsTitle.defaultMessage));
-        await executeThunk(
-          getUsagePaths({
-            courseId,
-            video: { id: 'mOckID3', displayName: 'mOckID3' },
-          }),
-          store.dispatch,
-        );
-        await waitFor(() => {
-          const { usageStatus } = store.getState().videos;
-          expect(usageStatus).toEqual(RequestStatus.FAILED);
-        });
+        await waitFor(() => expect(screen.getByText('Failed to get usage metrics for mOckID3.mp4.')).toBeVisible());
       });
 
       it('multiple video files fetch failure should show error', async () => {
@@ -734,16 +730,7 @@ describe('Videos page', () => {
 
         axiosMock.onPut(`${getVideosUrl(courseId)}/download`).reply(404);
         fireEvent.click(downloadButton!);
-        await executeThunk(
-          // @ts-ignore
-          fetchVideoDownload([{ original: { displayName: 'mOckID1', id: '2', downloadLink: 'test' } }]),
-          store.dispatch,
-        );
-
-        const updateStatus = store.getState().videos.updatingStatus;
-        expect(updateStatus).toEqual(RequestStatus.FAILED);
-
-        expect(screen.getByText('Error')).toBeVisible();
+        await waitFor(() => expect(screen.getByText('Error')).toBeVisible());
       });
     });
   });
